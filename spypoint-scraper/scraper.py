@@ -4,6 +4,8 @@ import os
 
 dotenv.load_dotenv()
 
+PHOTO_SIZE = "medium" # small (72x72), medium (160x90), or large (720x406)
+
 print("Logging in...")
 
 login_request = requests.post("https://restapi.spypoint.com/api/v3/user/login", json={
@@ -40,34 +42,53 @@ while selected_camera not in camera_map:
 camera_id = camera_map[selected_camera]
 print("Downloading photos from camera %s..." % camera_id)
 
-photo_list_request = requests.post("https://restapi.spypoint.com/api/v3/photo/all", json={
-    "camera": [camera_id],
-    "customTags": [],
-    "dateEnd": "2100-01-01T00:00:00.000Z",
-    "limit": 100,
-    "mediaTypes": [],
-    "species": [],
-    "timeOfDay": []
-}, headers={
-    "Authorization": "bearer " + token 
-})
-
-photo_list = photo_list_request.json()
-
-try:
-    os.mkdir("spypoint-scraper/photos")
-except FileExistsError:
-    pass
-
+end_date = "2100-01-01T00:00:00.000Z"
+total = 0
 downloaded = 0
-for photo in photo_list["photos"]:
-    if os.path.exists("spypoint-scraper/photos/%s.jpg" % (photo["id"])):
-        continue
 
-    photo_request = requests.get("https://%s/%s" % (photo["large"]["host"], photo["large"]["path"]))
+while end_date != "done":
+    photo_list_request = requests.post("https://restapi.spypoint.com/api/v3/photo/all", json={
+        "camera": [camera_id],
+        "customTags": [],
+        "dateEnd": end_date,
+        "limit": 100,
+        "mediaTypes": [],
+        "species": [],
+        "timeOfDay": []
+    }, headers={
+        "Authorization": "bearer " + token 
+    })
 
-    with open("spypoint-scraper/photos/%s.jpg" % (photo["id"]), "wb") as file:
-        file.write(photo_request.content)
-        downloaded += 1
+    photo_list = photo_list_request.json()
+    total += photo_list["countPhotos"]
 
-print("Downloaded %i photos" % (downloaded))
+    try:
+        os.mkdir("spypoint-scraper/photos")
+    except FileExistsError:
+        pass
+
+    for photo in photo_list["photos"]:
+        date = photo["originDate"][0:10]
+        time = photo["originDate"][11:19].replace(":", "-")
+        try:
+            os.mkdir("spypoint-scraper/photos/%s" % date)
+        except FileExistsError:
+            pass
+
+        if os.path.exists(f"spypoint-scraper/photos/{date}/{time}.jpg"):
+            continue
+
+        photo_request = requests.get("https://%s/%s" % (photo[PHOTO_SIZE]["host"], photo[PHOTO_SIZE]["path"]))
+
+        with open(f"spypoint-scraper/photos/{date}/{time}.jpg", "wb") as file:
+            file.write(photo_request.content)
+            downloaded += 1
+        
+        print(f"\033[K{downloaded}/{str(total) if total % 100 != 0 else str(total) + "+"} photos...", end="\r")
+    
+    if photo_list["countPhotos"] < 100:
+        end_date = "done"
+    else:
+        end_date = photo_list["photos"][photo_list["countPhotos"] - 1]["originDate"]
+
+print("\nDownloaded %i photos" % (downloaded))
