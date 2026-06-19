@@ -1,10 +1,33 @@
 import requests
 import dotenv
+import datetime
+import time
+import argparse
+import sys
 import os
 
 dotenv.load_dotenv()
 
-PHOTO_SIZE = "medium" # small (72x72), medium (160x90), or large (720x406)
+parser = argparse.ArgumentParser(
+    prog="spypoint-dump",
+    description="Dump camera photos from Spypoint to a shared drive.",
+)
+parser.add_argument("destination",
+    nargs=1,
+    action="store",
+    help="The destination to dump to. This should be a directory in the shared drive named after a group, NOT one of the camera directories.")
+parser.add_argument("camera",
+    nargs=1,
+    action="store",
+    help="The ID of the camera to download photos from, or 'list' to list all cameras on the Spypoint account")
+parser.add_argument("-s", "--size", help="Photo size to download: 'small' (72x72), 'medium' (160x90), or 'large' (720x406)", default="large", choices=("small", "medium", "large"))
+parser.add_argument("-m", "--max", help="Maximum number of photos to download", type=int)
+
+args = parser.parse_args()
+
+if not os.path.isdir(args.destination[0]):
+    print("Destination must be a directory.", file=sys.stderr)
+    exit(1)
 
 print("Logging in...")
 
@@ -17,30 +40,23 @@ login = login_request.json()
 uuid = login["uuid"]
 token = login["token"]
 
-print("Logged in, listing cameras...")
+if args.camera[0] == "list":
+    print("Logged in, listing cameras...")
 
-camera_list_request = requests.get("https://restapi.spypoint.com/api/v3/camera/base-info", headers={
-    "Authorization": "bearer " + token 
-})
+    camera_list_request = requests.get("https://restapi.spypoint.com/api/v3/camera/base-info", headers={
+        "Authorization": "bearer " + token 
+    })
 
-camera_list = camera_list_request.json()
+    camera_list = camera_list_request.json()
 
-print("Found %s cameras:" % (len(camera_list)))
+    print("Found %s cameras:" % (len(camera_list)))
 
-camera_map = {}
-for camera in camera_list:
-    print("- %s - %s (%s)" % (camera["name"], camera["model"], camera["id"]))
-    camera_map[camera["id"]] = camera["id"]
-    camera_map[camera["name"]] = camera["id"]
+    for camera in camera_list:
+        print("- %s - %s (%s)" % (camera["name"], camera["model"], camera["id"]))
+    exit(0)
 
-selected_camera = None
-while selected_camera not in camera_map:
-    if selected_camera is not None:
-        print("Camera not recognized, try again")
-    selected_camera = input("Enter a camera name or ID to look up: ")
-
-camera_id = camera_map[selected_camera]
-print("Downloading photos from camera %s..." % camera_id)
+camera_id = args.camera[0]
+print("Logged in, downloading photos from camera %s..." % camera_id)
 
 end_date = "2100-01-01T00:00:00.000Z"
 total = 0
@@ -62,29 +78,40 @@ while end_date != "done":
     photo_list = photo_list_request.json()
     total += photo_list["countPhotos"]
 
-    try:
-        os.mkdir("spypoint-scraper/photos")
-    except FileExistsError:
-        pass
-
     for photo in photo_list["photos"]:
         date = photo["originDate"][0:10]
         time = photo["originDate"][11:19].replace(":", "-")
+        timestamp = datetime.datetime.strptime(photo["originDate"][0:19], "%Y-%m-%dT%H:%M:%S")
+        path = os.path.join(
+            args.destination[0],
+            date,
+            time + ".jpg"
+        )
+
         try:
-            os.mkdir("spypoint-scraper/photos/%s" % date)
+            os.mkdir(os.path.join(
+                args.destination[0],
+                date
+            ))
         except FileExistsError:
             pass
 
-        if os.path.exists(f"spypoint-scraper/photos/{date}/{time}.jpg"):
-            continue
+        if os.path.exists(path):
+            print("\nDownloaded %i photos" % (downloaded))
+            exit(0)
 
-        photo_request = requests.get("https://%s/%s" % (photo[PHOTO_SIZE]["host"], photo[PHOTO_SIZE]["path"]))
+        photo_request = requests.get("https://%s/%s" % (photo[args.size]["host"], photo[args.size]["path"]))
 
-        with open(f"spypoint-scraper/photos/{date}/{time}.jpg", "wb") as file:
+        with open(path, "wb") as file:
             file.write(photo_request.content)
             downloaded += 1
+        os.utime(path, (timestamp.timestamp(), timestamp.timestamp()))
         
         print(f"\033[K{downloaded}/{str(total) if total % 100 != 0 else str(total) + "+"} photos...", end="\r")
+
+        if args.max is not None and downloaded >= args.max:
+            print("\nDownloaded %i photos" % (downloaded))
+            exit(0)
     
     if photo_list["countPhotos"] < 100:
         end_date = "done"
