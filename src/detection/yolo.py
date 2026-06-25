@@ -2,12 +2,13 @@ from typing import List
 import os
 import argparse
 import sys
-
-from ultralytics import YOLO
 from pathlib import Path
 import cv2
 import threading
 from threading import Thread
+import torch
+from ultralytics import YOLO
+from tqdm import tqdm
 
 # COCO classes: 0=person, 2=car, 5=bus, 7=truck
 TARGET_CLASSES = [0, 2, 5, 7]
@@ -16,11 +17,12 @@ total_counts = {}
 total_counts_lock = threading.Lock()
 
 
-def process_images(img_paths: List[Path], input_folder: Path, output_folder: Path, model_name: str):
+def process_images(img_paths: List[Path], input_folder: Path, output_folder: Path, model_name: str, progress_bar: tqdm):
     thread_model = YOLO(model_name)
 
     for img_path in img_paths:
         if img_path.suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp"]:
+            progress_bar.update(1)
             continue
 
         results = thread_model.predict(
@@ -58,7 +60,7 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
         out_path = output_folder / img_path.relative_to(input_folder)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(out_path), image)
-        print(f"Processed: {img_path.relative_to(input_folder)}")
+        progress_bar.update(1)
 
 
 def main():
@@ -81,6 +83,12 @@ def main():
         default="yolo26s.pt",
         help="YOLO model weights to use (default: yolo26s.pt)."
     )
+    parser.add_argument(
+        "-c", "--cores",
+        type=int,
+        default=None,
+        help="Number of CPU cores to allocate to YOLO detections (default: use all available cores)."
+    )
     args = parser.parse_args()
 
     input_folder = Path(args.input_dir).resolve()
@@ -91,6 +99,22 @@ def main():
         sys.exit(1)
 
     output_folder.mkdir(parents=True, exist_ok=True)
+
+    # Determine CPU cores allocation
+    max_cores = os.cpu_count() or 4
+    if args.cores is not None:
+        if args.cores <= 0:
+            print("Error: The number of allocated CPU cores must be at least 1.", file=sys.stderr)
+            sys.exit(1)
+        thread_count = args.cores
+    else:
+        thread_count = max_cores
+
+    # Configure PyTorch CPU thread count to respect our core allocation globally
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+
+    print(f"Allocating {thread_count} CPU core(s) to YOLO detections...")
 
     # Initialize total_counts with class names from the selected model
     try:
@@ -111,7 +135,8 @@ def main():
         print("No matching images found in the input directory.")
         return
 
-    thread_count = os.cpu_count() or 4
+    progress_bar = tqdm(total=len(all_images), desc="Progress", unit="image")
+
     chunk_size = max(1, len(all_images) // thread_count)
     threads: List[Thread] = []
 
@@ -123,7 +148,7 @@ def main():
             continue
         thread = threading.Thread(
             target=process_images,
-            args=(imgs, input_folder, output_folder, args.model)
+            args=(imgs, input_folder, output_folder, args.model, progress_bar)
         )
         threads.append(thread)
         thread.start()
@@ -131,8 +156,10 @@ def main():
     for t in threads:
         t.join()
         
+    progress_bar.close()
     print("YIPPEEKIYAY MOTHERFUCKER")
 
 
 if __name__ == "__main__":
     main()
+
