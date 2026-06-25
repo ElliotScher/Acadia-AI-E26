@@ -39,3 +39,22 @@ app.*.map.json
 venv
 *.jpg
 .DS_Store
+
+# Virtual Environments
+.env/
+.venv/
+venv/
+env/
+.conan/
+.conda/
+
+# Python Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
