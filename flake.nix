@@ -50,9 +50,9 @@
             # Setup LD_LIBRARY_PATH for PyPI wheels inside the shell
             export LD_LIBRARY_PATH="${libPath}:$LD_LIBRARY_PATH"
 
-            echo "========================================================="
+            echo "=========================================================="
             echo "   Welcome to the Acadia AI E26 Development Environment   "
-            echo "========================================================="
+            echo "=========================================================="
             echo "Using base Python and uv."
             echo ""
 
@@ -68,8 +68,8 @@
 
             echo ""
             echo "You can run your project using uv:"
-            echo "  uv run python src/detection/yolo.py"
-            echo "========================================================="
+            echo "  uv run <path/to/script>"
+            echo "=========================================================="
           '';
         };
       });
