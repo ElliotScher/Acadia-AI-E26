@@ -66,30 +66,6 @@
               VIRTUAL_ENV=.venv uv sync
             fi
 
-            # 2. Setup stable python wrappers to make PyCharm work without plugins
-            echo "Creating Python interpreter wrappers for IDE compatibility..."
-            rm -f .venv/bin/python .venv/bin/python3 .venv/bin/python-real .venv/bin/python3-real
-            ln -sfn ${pkgs.python3}/bin/python3 .venv/bin/python-real
-            ln -sfn ${pkgs.python3}/bin/python3 .venv/bin/python3-real
-
-            # Determine python version dynamically (e.g. python3.13)
-            PYTHON_VERSION=$(${pkgs.python3}/bin/python3 -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
-
-            # Helper function to generate interpreter wrapper scripts
-            write_wrapper() {
-              local target="$1"
-              local real_bin="$2"
-              echo "#!/bin/sh" > "$target"
-              echo "export VIRTUAL_ENV=\"\$(cd \"\$(dirname \"\$0\")/..\" && pwd)\"" >> "$target"
-              echo "export PYTHONPATH=\"\$VIRTUAL_ENV/lib/$PYTHON_VERSION/site-packages:\$PYTHONPATH\"" >> "$target"
-              echo "export LD_LIBRARY_PATH=\"${libPath}:\$LD_LIBRARY_PATH\"" >> "$target"
-              echo "exec \"\$VIRTUAL_ENV/bin/$real_bin\" \"\$@\"" >> "$target"
-              chmod +x "$target"
-            }
-
-            write_wrapper .venv/bin/python python-real
-            write_wrapper .venv/bin/python3 python3-real
-
             echo ""
             echo "You can run your project using uv:"
             echo "  uv run python src/detection/yolo.py"
