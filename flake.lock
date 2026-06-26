@@ -1,0 +1,65 @@
+{
+  "nodes": {
+    "acadia-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1782482377,
+        "narHash": "sha256-JKXRXfAt+vn7WoNldhw/Peq8HB+gOee7mLndplBrN8w=",
+        "owner": "ElliotScher",
+        "repo": "Acadia-AI-E26",
+        "rev": "d0fd21a450e948f709b403302a564f538e796d21",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ElliotScher",
+        "repo": "Acadia-AI-E26",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1782467914,
+        "narHash": "sha256-pGvFkM8N0xEkIIXDe5YYfbEAvHrk4IxBrjB/x8OomhE=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "e73de5be04e0eff4190a1432b946d469c794e7b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "pyproject-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1782089418,
+        "narHash": "sha256-LRD1SuQWr49fGq3A+8GLXfsLE2xqIpQA440YDZwms3M=",
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "rev": "43f0b40edd0a74c63f66b7b48d969ae6b740d611",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "acadia-src": "acadia-src",
+        "nixpkgs": "nixpkgs",
+        "pyproject-nix": "pyproject-nix"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
