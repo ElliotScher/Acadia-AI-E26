@@ -35,6 +35,19 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeSelection = QtGui.QAction("Analyze Selection", self)
         mAnalyze.addAction(aAnalyzeSelection)
 
+        mSelect = self.menuBar().addMenu("Select")
+        aSelectAll = QtGui.QAction("Select All", self)
+        aSelectAll.triggered.connect(self.selectAll)
+        aSelectAll.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
+        mSelect.addAction(aSelectAll)
+        aSelectDeselect = QtGui.QAction("Deselect All", self)
+        aSelectDeselect.triggered.connect(self.imageTab.gallery.clearSelection)
+        aSelectDeselect.setShortcut(QtGui.QKeySequence.StandardKey.Deselect)
+        mSelect.addAction(aSelectDeselect)
+        aSelectInvert = QtGui.QAction("Invert Selection", self)
+        aSelectInvert.triggered.connect(self.selectInverse)
+        mSelect.addAction(aSelectInvert)
+
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
@@ -42,6 +55,21 @@ class Root(QtWidgets.QMainWindow):
         for root, _, files in os.walk(path):
             images.extend([os.path.join(root, file) for file in files])
         self.imageTab.gallery.addImages(images)
+
+    @QtCore.Slot()
+    def selectAll(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.gallery.selectAll()
+
+    @QtCore.Slot()
+    def selectDeselect(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.gallery.clearSelection()
+
+    @QtCore.Slot()
+    def selectInverse(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.gallery.invertSelection()
 
 
 # class SetupTab(QtWidgets.QWidget):
