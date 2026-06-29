@@ -229,14 +229,42 @@ class EntityFeatureExtractor:
     """
     Extracts high-dimensional feature vectors using a pre-trained ResNet-50.
     """
-    def __init__(self, use_gpu=False):
-        self.device = torch.device("cuda" if use_gpu and torch.cuda.is_available() else "cpu")
+    def __init__(self, use_gpu=False, checkpoint_path=None):
+        if use_gpu:
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
+        else:
+            self.device = torch.device("cpu")
         try:
             from torchvision.models import ResNet50_Weights
             self.model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
         except ImportError:
             self.model = models.resnet50(pretrained=True)
             
+        if checkpoint_path:
+            checkpoint_path = Path(checkpoint_path)
+            if checkpoint_path.exists():
+                state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+                
+                # Adapt keys from the training model format (ReIDModel with self.backbone)
+                adapted_state_dict = {}
+                for k, v in state_dict.items():
+                    if k.startswith("backbone."):
+                        new_key = k[len("backbone."):]
+                        if not new_key.startswith("fc."):
+                            adapted_state_dict[new_key] = v
+                    elif not k.startswith("fc."):
+                        adapted_state_dict[k] = v
+                        
+                self.model.load_state_dict(adapted_state_dict, strict=False)
+                print(f"Loaded custom fine-tuned weights from {checkpoint_path}")
+            else:
+                print(f"Warning: Checkpoint path {checkpoint_path} not found. Using default weights.")
+                
         # Replace fully connected class head with Identity to extract 2048-dim features
         self.model.fc = nn.Identity()
         self.model.to(self.device)
@@ -406,9 +434,9 @@ def is_box_excluded_by_zones(box, zones, img_w, img_h):
         
     return False
 
-def process_images_worker(img_paths, input_folder, threshold, zones, progress_bar, results_dict, lock):
+def process_images_worker(img_paths, input_folder, threshold, zones, progress_bar, results_dict, lock, checkpoint_path=None):
     # One extractor per thread to prevent model contention
-    extractor = EntityFeatureExtractor(use_gpu=False)
+    extractor = EntityFeatureExtractor(use_gpu=False, checkpoint_path=checkpoint_path)
     
     for img_path in img_paths:
         img = cv2.imread(str(img_path))
@@ -481,6 +509,12 @@ def main():
         default=0.75,
         help="Cosine similarity threshold for reidentification matching (default: 0.75)."
     )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to custom fine-tuned PyTorch model checkpoint (.pth)."
+    )
     args = parser.parse_args()
 
     input_folder = Path(args.input_dir).resolve()
@@ -540,7 +574,8 @@ def main():
             continue
         thread = threading.Thread(
             target=process_images_worker,
-            args=(imgs, input_folder, args.threshold, zones, progress_bar, results_dict, lock)
+            args=(imgs, input_folder, args.threshold, zones, progress_bar, results_dict, lock),
+            kwargs={"checkpoint_path": args.checkpoint}
         )
         threads.append(thread)
         thread.start()
