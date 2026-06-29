@@ -61,3 +61,6 @@ build/
 
 # YOLO Models
 *.pt
+
+# Database
+*.db

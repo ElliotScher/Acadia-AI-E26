@@ -16,4 +16,6 @@ dependencies = [
     "tqdm>=4.66.0",
     "torch>=2.12.1",
     "pyside6>=6.11.1",
+    "sqlalchemy>=2.0.51",
+    "pytest>=9.1.1",
 ]
