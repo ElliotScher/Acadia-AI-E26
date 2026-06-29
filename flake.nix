@@ -30,6 +30,14 @@
           pkgs.libxcb
           pkgs.libxkbcommon
           pkgs.dbus.lib
+          pkgs.fontconfig
+          pkgs.freetype
+          pkgs.zstd
+          pkgs.xcbutilcursor
+          pkgs.xcbutilkeysyms
+          pkgs.xcbutilwm
+          pkgs.xcbutilimage
+          pkgs.wayland
         ];
       });
     in

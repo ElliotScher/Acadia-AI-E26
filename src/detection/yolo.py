@@ -33,7 +33,11 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
         )
 
         image = cv2.imread(str(img_path))
+        if image is None:
+            progress_bar.update(1)
+            continue
 
+        boxes_to_draw = []
         for r in results:
             for box in r.boxes:
                 cls = int(box.cls[0])
@@ -44,24 +48,31 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
 
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
-
-                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), thickness=25)
-                cv2.putText(
-                    image, 
-                    f"{label} {conf:.2f}", 
-                    (x1, y1 - 8), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    5,
-                    (0, 255, 0), 
-                    5
-                )
+                boxes_to_draw.append((x1, y1, x2, y2, label, conf))
 
         # Save result, preserving directory structure
-        out_path = output_folder / img_path.relative_to(input_folder)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(out_path), image)
-        progress_bar.update(1)
+        out_path_base = output_folder / img_path.relative_to(input_folder)
+        out_path_base.parent.mkdir(parents=True, exist_ok=True)
 
+        if not boxes_to_draw:
+            cv2.imwrite(str(out_path_base), image)
+        else:
+            for i, (x1, y1, x2, y2, label, conf) in enumerate(boxes_to_draw):
+                image_copy = image.copy()
+                cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 0), thickness=5)
+                # cv2.putText(
+                #     image_copy,
+                #     f"{label} {conf:.2f}",
+                #     (x1, y1 - 8),
+                #     cv2.FONT_HERSHEY_SIMPLEX,
+                #     5,
+                #     (0, 255, 0),
+                #     5
+                # )
+                out_path = out_path_base.with_name(f"{out_path_base.stem}-{i}{out_path_base.suffix}")
+                cv2.imwrite(str(out_path), image_copy)
+
+        progress_bar.update(1)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -86,8 +97,8 @@ def main():
     parser.add_argument(
         "-c", "--cores",
         type=int,
-        default=None,
-        help="Number of CPU cores to allocate to YOLO detections (default: use all available cores)."
+        default=1,
+        help="Number of CPU cores to allocate to YOLO detections (default: 1)."
     )
     args = parser.parse_args()
 
@@ -101,14 +112,10 @@ def main():
     output_folder.mkdir(parents=True, exist_ok=True)
 
     # Determine CPU cores allocation
-    max_cores = os.cpu_count() or 4
-    if args.cores is not None:
-        if args.cores <= 0:
-            print("Error: The number of allocated CPU cores must be at least 1.", file=sys.stderr)
-            sys.exit(1)
-        thread_count = args.cores
-    else:
-        thread_count = max_cores
+    if args.cores <= 0:
+        print("Error: The number of allocated CPU cores must be at least 1.", file=sys.stderr)
+        sys.exit(1)
+    thread_count = args.cores
 
     # Configure PyTorch CPU thread count to respect our core allocation globally
     torch.set_num_threads(1)
@@ -157,7 +164,6 @@ def main():
         t.join()
         
     progress_bar.close()
-    print("YIPPEEKIYAY MOTHERFUCKER")
 
 
 if __name__ == "__main__":
