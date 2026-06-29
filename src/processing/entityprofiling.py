@@ -302,7 +302,59 @@ class ProfileDatabase:
                     best_id = pid
         return best_id, best_sim
 
-def process_images_worker(img_paths, input_folder, threshold, progress_bar, results_dict, lock):
+def is_box_excluded_by_zones(box, zones, img_w, img_h):
+    if not zones:
+        return False
+    bx, by, bw, bh = box
+    has_inclusion_zones = False
+    inside_at_least_one_inclusion = False
+    
+    for zone in zones:
+        nx, ny, nw, nh = zone['rect']
+        zx = nx * img_w
+        zy = ny * img_h
+        zw = nw * img_w
+        zh = nh * img_h
+        
+        if zone['type'] == 'exclude':
+            # Calculate intersection
+            ix1 = max(bx, zx)
+            iy1 = max(by, zy)
+            ix2 = min(bx + bw, zx + zw)
+            iy2 = min(by + bh, zy + zh)
+            
+            if ix2 > ix1 and iy2 > iy1:
+                intersect_area = (ix2 - ix1) * (iy2 - iy1)
+                box_area = bw * bh
+                zone_area = zw * zh
+                if box_area > 0 and (intersect_area / box_area) > 0.10:
+                    return True
+                if zone_area > 0 and (intersect_area / zone_area) > 0.10:
+                    return True
+        
+        elif zone['type'] == 'include':
+            has_inclusion_zones = True
+            # Check overlap with inclusion zone
+            ix1 = max(bx, zx)
+            iy1 = max(by, zy)
+            ix2 = min(bx + bw, zx + zw)
+            iy2 = min(by + bh, zy + zh)
+            
+            if ix2 > ix1 and iy2 > iy1:
+                intersect_area = (ix2 - ix1) * (iy2 - iy1)
+                box_area = bw * bh
+                zone_area = zw * zh
+                if box_area > 0 and (intersect_area / box_area) > 0.10:
+                    inside_at_least_one_inclusion = True
+                elif zone_area > 0 and (intersect_area / zone_area) > 0.10:
+                    inside_at_least_one_inclusion = True
+
+    if has_inclusion_zones and not inside_at_least_one_inclusion:
+        return True
+        
+    return False
+
+def process_images_worker(img_paths, input_folder, threshold, zones, progress_bar, results_dict, lock):
     # One extractor per thread to prevent model contention
     extractor = EntityFeatureExtractor(use_gpu=False)
     
@@ -312,7 +364,11 @@ def process_images_worker(img_paths, input_folder, threshold, progress_bar, resu
             progress_bar.update(1)
             continue
             
-        boxes = detect_entities(img)
+        raw_boxes = detect_entities(img)
+        img_h, img_w = img.shape[:2]
+        
+        # Filter boxes by zones
+        boxes = [b for b in raw_boxes if not is_box_excluded_by_zones(b, zones, img_w, img_h)]
         detections = []
 
         for box in boxes:
@@ -399,6 +455,17 @@ def main():
         if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp"]
     ]
 
+    # Load labels.json zones if present
+    labels_file = input_folder / "labels.json"
+    zones = []
+    if labels_file.exists():
+        try:
+            with open(labels_file, "r") as f:
+                db = json.load(f)
+                zones = db.get("__zones__", [])
+        except Exception as e:
+            print(f"Warning: Failed to load zones from labels.json: {e}", file=sys.stderr)
+
     print(f"Allocating {thread_count} CPU core(s) to ResNet-50 feature extraction...")
 
     if not all_images:
@@ -411,7 +478,7 @@ def main():
     progress_bar = tqdm(total=len(all_images), desc="Extracting Features", unit="image")
     
     chunk_size = max(1, len(all_images) // thread_count)
-    threads: List[Thread] = []
+    threads = []
 
     for i in range(thread_count):
         start = i * chunk_size
@@ -421,7 +488,7 @@ def main():
             continue
         thread = threading.Thread(
             target=process_images_worker,
-            args=(imgs, input_folder, args.threshold, progress_bar, results_dict, lock)
+            args=(imgs, input_folder, args.threshold, zones, progress_bar, results_dict, lock)
         )
         threads.append(thread)
         thread.start()

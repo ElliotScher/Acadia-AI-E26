@@ -206,6 +206,7 @@ class ImageWidget(QWidget):
     across images with different resolutions.
     """
     entityClicked = Signal(int)  # emits the box index
+    zonesChanged = Signal(object)  # emits the list of zones [{'type': 'exclude'/'include', 'rect': (nx, ny, nw, nh)}]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -219,6 +220,17 @@ class ImageWidget(QWidget):
         self.offset_x = 0
         self.offset_y = 0
 
+        # List of zones: list of dict {'type': 'exclude'|'include', 'rect': (nx, ny, nw, nh)}
+        self.zones = []
+        self.active_zone_idx = -1
+        
+        self.drag_mode = None  # None, 'move', 'resize_tl', 'resize_tr', 'resize_bl', 'resize_br', 'create'
+        self.drag_start_pos = (0, 0)
+        self.drag_start_rect = (0, 0, 0, 0)
+        
+        self.is_draw_mode = None  # None, 'exclude', or 'include'
+        self.setMouseTracking(True)  # track mouse for hover cursor changes
+
     def set_image(self, image_path, boxes, labels, active_idx):
         self.image_path = image_path
         self.pixmap = QPixmap(str(image_path))
@@ -226,6 +238,18 @@ class ImageWidget(QWidget):
         self.labels = labels
         self.active_idx = active_idx
         self.update()
+
+    def set_zones(self, zones):
+        self.zones = zones
+        self.active_zone_idx = -1
+        self.update()
+
+    def set_draw_mode(self, mode):
+        self.is_draw_mode = mode
+        if mode:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.unsetCursor()
 
     def map_to_orig(self, pos):
         if not self.pixmap:
@@ -237,6 +261,61 @@ class ImageWidget(QWidget):
         orig_x = max(0, min(orig_x, self.pixmap.width()))
         orig_y = max(0, min(orig_y, self.pixmap.height()))
         return int(orig_x), int(orig_y)
+
+    def get_drag_mode_for_zone(self, pos, zone):
+        nx, ny, nw, nh = zone['rect']
+        img_w = self.pixmap.width()
+        img_h = self.pixmap.height()
+        
+        ex = nx * img_w
+        ey = ny * img_h
+        ew = nw * img_w
+        eh = nh * img_h
+        
+        sx = self.offset_x + ex * self.scale
+        sy = self.offset_y + ey * self.scale
+        sw = ew * self.scale
+        sh = eh * self.scale
+        
+        mx, my = pos.x(), pos.y()
+        threshold = 12  # Interaction handle area in screen pixels
+        
+        # TL corner check
+        if abs(mx - sx) <= threshold and abs(my - sy) <= threshold:
+            return 'resize_tl'
+        # TR corner check
+        elif abs(mx - (sx + sw)) <= threshold and abs(my - sy) <= threshold:
+            return 'resize_tr'
+        # BL corner check
+        elif abs(mx - sx) <= threshold and abs(my - (sy + sh)) <= threshold:
+            return 'resize_bl'
+        # BR corner check
+        elif abs(mx - (sx + sw)) <= threshold and abs(my - (sy + sh)) <= threshold:
+            return 'resize_br'
+            
+        # Inside rect check
+        if sx <= mx <= sx + sw and sy <= my <= sy + sh:
+            return 'move'
+            
+        return None
+
+    def find_active_zone(self, pos):
+        if not self.pixmap:
+            return -1, None
+            
+        # Check resize handles first (higher priority than overlapping moves)
+        for i, zone in enumerate(self.zones):
+            mode = self.get_drag_mode_for_zone(pos, zone)
+            if mode and mode.startswith('resize'):
+                return i, mode
+                
+        # Check move areas
+        for i, zone in enumerate(self.zones):
+            mode = self.get_drag_mode_for_zone(pos, zone)
+            if mode == 'move':
+                return i, mode
+                
+        return -1, None
 
     def paintEvent(self, event):
         if not self.pixmap or self.pixmap.isNull():
@@ -312,32 +391,231 @@ class ImageWidget(QWidget):
             painter.setPen(QColor(255, 255, 255))
             painter.drawText(x + 5, max(th, y - 5), label_text)
 
+        # Draw exclusion and inclusion zones
+        if self.pixmap:
+            img_w = self.pixmap.width()
+            img_h = self.pixmap.height()
+            
+            for i, zone in enumerate(self.zones):
+                nx, ny, nw, nh = zone['rect']
+                ex = nx * img_w
+                ey = ny * img_h
+                ew = nw * img_w
+                eh = nh * img_h
+
+                x = int(self.offset_x + ex * self.scale)
+                y = int(self.offset_y + ey * self.scale)
+                w = int(ew * self.scale)
+                h = int(eh * self.scale)
+
+                is_active = (i == self.active_zone_idx)
+                z_type = zone['type']
+                
+                # Apply visual colors: Red for exclude, Teal for include
+                if z_type == 'exclude':
+                    border_color = QColor(244, 67, 54)
+                    fill_color = QColor(244, 67, 54, 40)
+                    label_text = f"EXCLUDE {i+1}"
+                else:
+                    border_color = QColor(0, 188, 212)
+                    fill_color = QColor(0, 188, 212, 40)
+                    label_text = f"INCLUDE {i+1}"
+
+                if is_active:
+                    border_pen = QPen(border_color, 3, Qt.PenStyle.DashLine)
+                else:
+                    border_pen = QPen(border_color, 2, Qt.PenStyle.SolidLine)
+
+                painter.setPen(border_pen)
+                painter.setBrush(fill_color)
+                painter.drawRect(x, y, w, h)
+
+                # Drawing Label
+                painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                painter.setPen(border_color)
+                painter.drawText(x + 5, y + 18, label_text)
+
+                # Draw corner anchor squares for active zone
+                if is_active:
+                    anchor_pen = QPen(border_color, 2, Qt.PenStyle.SolidLine)
+                    painter.setPen(anchor_pen)
+                    painter.setBrush(QColor(255, 255, 255))
+                    
+                    anchor_size = 8
+                    half_size = anchor_size // 2
+                    
+                    corners = [
+                        (x, y),
+                        (x + w, y),
+                        (x, y + h),
+                        (x + w, y + h)
+                    ]
+                    for cx, cy in corners:
+                        painter.drawRect(cx - half_size, cy - half_size, anchor_size, anchor_size)
+
     def mousePressEvent(self, event):
         if not self.pixmap:
             return
 
+        pos = event.position()
+        idx, mode = self.find_active_zone(pos)
+        img_w = self.pixmap.width()
+        img_h = self.pixmap.height()
+
+        # 1. If in draw mode: Left-click starts drawing a new zone
+        if self.is_draw_mode and event.button() == Qt.MouseButton.LeftButton:
+            self.drag_mode = 'create'
+            self.drag_start_pos = self.map_to_orig(pos)
+            new_zone = {
+                'type': self.is_draw_mode,
+                'rect': (self.drag_start_pos[0] / img_w, self.drag_start_pos[1] / img_h, 0.0, 0.0)
+            }
+            self.zones.append(new_zone)
+            self.active_zone_idx = len(self.zones) - 1
+            self.drag_start_rect = (self.drag_start_pos[0], self.drag_start_pos[1], 0, 0)
+            self.update()
+            return
+
+        # 2. Ordinary left-click: select zone, move, resize, or select box
         if event.button() == Qt.MouseButton.LeftButton:
-            # Standard left-click selection of bounding boxes
-            orig_x, orig_y = self.map_to_orig(event.position())
-            import sys
-            print(f"[DEBUG] Mouse click at widget position: {event.position().x():.1f}, {event.position().y():.1f} -> mapped to original image coordinates: {orig_x}, {orig_y}", file=sys.stderr)
-            clicked_idx = -1
-            min_area = float('inf')
-            for i, (bx, by, bw, bh) in enumerate(self.boxes):
-                if bx <= orig_x <= bx + bw and by <= orig_y <= by + bh:
-                    area = bw * bh
-                    if area < min_area:
-                        min_area = area
-                        clicked_idx = i
-            print(f"[DEBUG] Click mapped to box index: {clicked_idx}", file=sys.stderr)
-            if clicked_idx != -1:
-                self.entityClicked.emit(clicked_idx)
+            if idx != -1:
+                # Drag or resize existing zone
+                self.active_zone_idx = idx
+                self.drag_mode = mode
+                self.drag_start_pos = self.map_to_orig(pos)
+                
+                # Convert normalized start rect to absolute
+                nx, ny, nw, nh = self.zones[idx]['rect']
+                self.drag_start_rect = (nx * img_w, ny * img_h, nw * img_w, nh * img_h)
+                self.update()
+            else:
+                self.active_zone_idx = -1
+                self.update()
+                
+                # Standard left-click selection of bounding boxes
+                orig_x, orig_y = self.map_to_orig(pos)
+                import sys
+                print(f"[DEBUG] Mouse click at widget position: {event.position().x():.1f}, {event.position().y():.1f} -> mapped to original image coordinates: {orig_x}, {orig_y}", file=sys.stderr)
+                clicked_idx = -1
+                min_area = float('inf')
+                for i, (bx, by, bw, bh) in enumerate(self.boxes):
+                    if bx <= orig_x <= bx + bw and by <= orig_y <= by + bh:
+                        area = bw * bh
+                        if area < min_area:
+                            min_area = area
+                            clicked_idx = i
+                print(f"[DEBUG] Click mapped to box index: {clicked_idx}", file=sys.stderr)
+                if clicked_idx != -1:
+                    self.entityClicked.emit(clicked_idx)
+            return
+
+        elif event.button() == Qt.MouseButton.RightButton:
+            if idx != -1:
+                # Right-click inside a zone deletes it
+                self.zones.pop(idx)
+                self.active_zone_idx = -1
+                self.zonesChanged.emit(self.zones)
+                self.update()
 
     def mouseMoveEvent(self, event):
-        pass
+        if not self.pixmap:
+            return
+
+        pos = event.position()
+
+        if self.drag_mode:
+            curr_ox, curr_oy = self.map_to_orig(pos)
+            start_ox, start_oy = self.drag_start_pos
+            sx, sy, sw, sh = self.drag_start_rect
+            
+            img_w = self.pixmap.width()
+            img_h = self.pixmap.height()
+            dx = curr_ox - start_ox
+            dy = curr_oy - start_oy
+
+            if self.drag_mode == 'create':
+                x1, y1 = start_ox, start_oy
+                x2, y2 = curr_ox, curr_oy
+                self.zones[self.active_zone_idx]['rect'] = (
+                    min(x1, x2) / img_w,
+                    min(y1, y2) / img_h,
+                    abs(x2 - x1) / img_w,
+                    abs(y2 - y1) / img_h
+                )
+
+            elif self.drag_mode == 'move':
+                new_x = max(0, min(sx + dx, img_w - sw))
+                new_y = max(0, min(sy + dy, img_h - sh))
+                self.zones[self.active_zone_idx]['rect'] = (new_x / img_w, new_y / img_h, sw / img_w, sh / img_h)
+
+            elif self.drag_mode == 'resize_br':
+                new_w = max(10, min(sw + dx, img_w - sx))
+                new_h = max(10, min(sh + dy, img_h - sy))
+                self.zones[self.active_zone_idx]['rect'] = (sx / img_w, sy / img_h, new_w / img_w, new_h / img_h)
+
+            elif self.drag_mode == 'resize_tl':
+                dx = min(dx, sw - 10)
+                dy = min(dy, sh - 10)
+                new_x = max(0, sx + dx)
+                new_y = max(0, sy + dy)
+                new_w = sw - (new_x - sx)
+                new_h = sh - (new_y - sy)
+                self.zones[self.active_zone_idx]['rect'] = (new_x / img_w, new_y / img_h, new_w / img_w, new_h / img_h)
+
+            elif self.drag_mode == 'resize_tr':
+                dy = min(dy, sh - 10)
+                new_y = max(0, sy + dy)
+                new_w = max(10, min(sw + dx, img_w - sx))
+                new_h = sh - (new_y - sy)
+                self.zones[self.active_zone_idx]['rect'] = (sx / img_w, new_y / img_h, new_w / img_w, new_h / img_h)
+
+            elif self.drag_mode == 'resize_bl':
+                dx = min(dx, sw - 10)
+                new_x = max(0, sx + dx)
+                new_w = sw - (new_x - sx)
+                new_h = max(10, min(sh + dy, img_h - sy))
+                self.zones[self.active_zone_idx]['rect'] = (new_x / img_w, sy / img_h, new_w / img_w, new_h / img_h)
+
+            self.update()
+
+        else:
+            # Hover cursor update based on mouse position
+            idx, mode = self.find_active_zone(pos)
+            self.active_zone_idx = idx
+            if idx != -1:
+                if mode == 'move':
+                    self.setCursor(Qt.CursorShape.SizeAllCursor)
+                elif mode in ['resize_tl', 'resize_br']:
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                elif mode in ['resize_tr', 'resize_bl']:
+                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            else:
+                if self.is_draw_mode:
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                else:
+                    self.unsetCursor()
+            self.update()
 
     def mouseReleaseEvent(self, event):
-        pass
+        if not self.pixmap:
+            return
+
+        if self.drag_mode:
+            if self.drag_mode == 'create':
+                nx, ny, nw, nh = self.zones[self.active_zone_idx]['rect']
+                img_w = self.pixmap.width()
+                img_h = self.pixmap.height()
+                if (nw * img_w) < 10 or (nh * img_h) < 10:
+                    self.zones.pop(self.active_zone_idx)
+                    self.active_zone_idx = -1
+
+            self.drag_mode = None
+            if self.is_draw_mode:
+                self.is_draw_mode = None
+                
+            self.zonesChanged.emit(self.zones)
+            self.update()
+            self.unsetCursor()
 
 
 class LabelerApp(QMainWindow):
@@ -345,7 +623,7 @@ class LabelerApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Acadia AI - Entity Reidentification Labeler")
         self.resize(1200, 800)
-        self.setStyleSheet(DARK_STYLESHEET)
+        # self.setStyleSheet(DARK_STYLESHEET)
 
         # State Variables
         self.dir_path = None
@@ -388,10 +666,45 @@ class LabelerApp(QMainWindow):
         self.select_dir_btn = QPushButton("Open Images Directory")
         self.select_dir_btn.clicked.connect(self.on_select_directory)
         sidebar_layout.addWidget(self.select_dir_btn)
-
         self.dir_label = QLabel("No directory loaded")
         self.dir_label.setWordWrap(True)
         sidebar_layout.addWidget(self.dir_label)
+
+        # Compact Zones controls layout
+        zones_h_layout = QHBoxLayout()
+        zones_h_layout.setSpacing(4)
+        
+        self.draw_exclude_btn = QPushButton("Exclude (D)")
+        self.draw_exclude_btn.setCheckable(True)
+        self.draw_exclude_btn.clicked.connect(self.on_draw_exclude_clicked)
+        self.draw_exclude_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; padding: 3px 6px; font-weight: bold; }"
+            "QPushButton:checked { background-color: #d32f2f; color: white; }"
+        )
+        self.draw_exclude_btn.setToolTip("Draw Exclusion Zone (D): candidate boxes overlapping >10% of box or zone area are excluded.")
+        zones_h_layout.addWidget(self.draw_exclude_btn)
+
+        self.draw_include_btn = QPushButton("Include (I)")
+        self.draw_include_btn.setCheckable(True)
+        self.draw_include_btn.clicked.connect(self.on_draw_include_clicked)
+        self.draw_include_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; padding: 3px 6px; font-weight: bold; }"
+            "QPushButton:checked { background-color: #00bcd4; color: #121212; }"
+        )
+        self.draw_include_btn.setToolTip("Draw Inclusion Zone (I): candidate boxes must overlap at least one inclusion zone.")
+        zones_h_layout.addWidget(self.draw_include_btn)
+
+        self.clear_exclusion_btn = QPushButton("Clear")
+        self.clear_exclusion_btn.setEnabled(False)
+        self.clear_exclusion_btn.clicked.connect(self.on_clear_exclusion_clicked)
+        self.clear_exclusion_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; padding: 3px 6px; background-color: #555; color: white; }"
+            "QPushButton:disabled { background-color: #333; color: #777; }"
+        )
+        self.clear_exclusion_btn.setToolTip("Clear all drawn zones on this folder.")
+        zones_h_layout.addWidget(self.clear_exclusion_btn)
+
+        sidebar_layout.addLayout(zones_h_layout)
 
         # Sidebar Tabs Widget
         self.sidebar_tabs = QTabWidget()
@@ -435,6 +748,7 @@ class LabelerApp(QMainWindow):
         # Image Viewer
         self.image_widget = ImageWidget()
         self.image_widget.entityClicked.connect(self.on_entity_clicked)
+        self.image_widget.zonesChanged.connect(self.on_zones_changed)
         center_layout.addWidget(self.image_widget)
         
         splitter.addWidget(center_widget)
@@ -483,8 +797,6 @@ class LabelerApp(QMainWindow):
 
         right_layout.addWidget(active_group)
 
-
-
         # Group Box: ResNet-50 Auto-Prediction
         predict_group = QGroupBox("ResNet-50 Auto-ReID Prediction")
         predict_layout = QVBoxLayout(predict_group)
@@ -499,7 +811,6 @@ class LabelerApp(QMainWindow):
         predict_layout.addWidget(self.accept_predict_btn)
         right_layout.addWidget(predict_group)
 
-        # Group Box: Manual ID entry
         manual_group = QGroupBox("Add or Select Identifier")
         manual_form = QFormLayout(manual_group)
         
@@ -580,6 +891,14 @@ class LabelerApp(QMainWindow):
         self.page_down_shortcut = QShortcut(QKeySequence(Qt.Key.Key_PageDown), self)
         self.page_down_shortcut.activated.connect(self.on_next_frame)
 
+        # Draw exclusion zone shortcut (D)
+        self.exclude_shortcut = QShortcut(QKeySequence(Qt.Key.Key_D), self)
+        self.exclude_shortcut.activated.connect(self.on_draw_exclude_shortcut)
+
+        # Draw inclusion zone shortcut (I)
+        self.include_shortcut = QShortcut(QKeySequence(Qt.Key.Key_I), self)
+        self.include_shortcut.activated.connect(self.on_draw_include_shortcut)
+
     def clear_matches_layout(self):
         # Clear matches UI
         for s in self.shortcuts:
@@ -618,6 +937,11 @@ class LabelerApp(QMainWindow):
                 self.labels_db = {}
         else:
             self.labels_db = {}
+
+        # Load zones if present
+        self.zones = self.labels_db.get("__zones__", [])
+        self.image_widget.set_zones(self.zones)
+        self.clear_exclusion_btn.setEnabled(len(self.zones) > 0)
 
 
 
@@ -728,15 +1052,15 @@ class LabelerApp(QMainWindow):
         self.current_img_path = self.all_images[row_idx]
         self.current_img = cv2.imread(str(self.current_img_path))
         
-        # Detect boxes inside the image
-        raw_boxes = detect_entities(self.current_img)
-        self.detected_boxes = raw_boxes
-        
         # Load existing labels for this image
         rel_name = self.current_img_path.name
         existing_labels = self.labels_db.get(rel_name, [])
         img_h, img_w = self.current_img.shape[:2]
 
+        # Detect boxes inside the image and filter by zones
+        raw_boxes = detect_entities(self.current_img)
+        self.detected_boxes = self.filter_boxes_by_zones(raw_boxes, img_w, img_h)
+        
         # Prune stale labels and update active labels coordinates to prevent duplicates
         cleaned_labels = []
         db_changed = False
@@ -746,7 +1070,7 @@ class LabelerApp(QMainWindow):
             matched_raw_box = None
             
             # Find matching raw detected box in this frame
-            for rbox in raw_boxes:
+            for rbox in self.detected_boxes:
                 rx, ry, rw, rh = rbox
                 ix1 = max(rx, ex)
                 iy1 = max(ry, ey)
@@ -1089,6 +1413,141 @@ class LabelerApp(QMainWindow):
             layout.addStretch()
             
             self.gallery_layout.insertWidget(self.gallery_layout.count() - 1, item_frame)
+
+    def is_box_excluded(self, box, img_w, img_h):
+        # Coordinates of the box
+        bx, by, bw, bh = box
+        
+        # Check exclusion zones
+        has_inclusion_zones = False
+        inside_at_least_one_inclusion = False
+        
+        for zone in self.zones:
+            nx, ny, nw, nh = zone['rect']
+            zx = nx * img_w
+            zy = ny * img_h
+            zw = nw * img_w
+            zh = nh * img_h
+            
+            if zone['type'] == 'exclude':
+                # Calculate intersection
+                ix1 = max(bx, zx)
+                iy1 = max(by, zy)
+                ix2 = min(bx + bw, zx + zw)
+                iy2 = min(by + bh, zy + zh)
+                
+                if ix2 > ix1 and iy2 > iy1:
+                    intersect_area = (ix2 - ix1) * (iy2 - iy1)
+                    # Exclude if overlap is > 10% of either box area or zone area
+                    box_area = bw * bh
+                    zone_area = zw * zh
+                    if box_area > 0 and (intersect_area / box_area) > 0.10:
+                        return True
+                    if zone_area > 0 and (intersect_area / zone_area) > 0.10:
+                        return True
+            
+            elif zone['type'] == 'include':
+                has_inclusion_zones = True
+                # Check overlap with inclusion zone
+                ix1 = max(bx, zx)
+                iy1 = max(by, zy)
+                ix2 = min(bx + bw, zx + zw)
+                iy2 = min(by + bh, zy + zh)
+                
+                if ix2 > ix1 and iy2 > iy1:
+                    intersect_area = (ix2 - ix1) * (iy2 - iy1)
+                    box_area = bw * bh
+                    zone_area = zw * zh
+                    if box_area > 0 and (intersect_area / box_area) > 0.10:
+                        inside_at_least_one_inclusion = True
+                    elif zone_area > 0 and (intersect_area / zone_area) > 0.10:
+                        inside_at_least_one_inclusion = True
+
+        if has_inclusion_zones and not inside_at_least_one_inclusion:
+            return True
+            
+        return False
+
+    def filter_boxes_by_zones(self, boxes, img_w, img_h):
+        if not self.zones:
+            return boxes
+        return [b for b in boxes if not self.is_box_excluded(b, img_w, img_h)]
+
+    @Slot(object)
+    def on_zones_changed(self, zones):
+        self.zones = zones
+        
+        # Enable/disable clear button
+        self.clear_exclusion_btn.setEnabled(len(self.zones) > 0)
+        
+        # Save zones to database
+        if self.dir_path:
+            self.labels_db["__zones__"] = self.zones
+            if self.labels_file:
+                with open(self.labels_file, "w") as f:
+                    json.dump(self.labels_db, f, indent=2)
+                    
+        # Reset check states of draw buttons
+        self.draw_exclude_btn.setChecked(False)
+        self.draw_include_btn.setChecked(False)
+        
+        # Reload the current frame to re-evaluate filtering
+        self.reload_current_frame()
+
+    @Slot()
+    def on_clear_exclusion_clicked(self):
+        self.zones = []
+        self.image_widget.set_zones([])
+        self.clear_exclusion_btn.setEnabled(False)
+        
+        # Save to database
+        if self.dir_path:
+            if "__zones__" in self.labels_db:
+                del self.labels_db["__zones__"]
+            if self.labels_file:
+                with open(self.labels_file, "w") as f:
+                    json.dump(self.labels_db, f, indent=2)
+                    
+        # Reset check states of draw buttons
+        self.draw_exclude_btn.setChecked(False)
+        self.draw_include_btn.setChecked(False)
+        
+        # Reload the current frame to re-evaluate filtering
+        self.reload_current_frame()
+
+    @Slot()
+    def on_draw_exclude_clicked(self):
+        if self.draw_exclude_btn.isChecked():
+            self.draw_include_btn.setChecked(False)
+            self.image_widget.set_draw_mode('exclude')
+        else:
+            self.image_widget.set_draw_mode(None)
+
+    @Slot()
+    def on_draw_include_clicked(self):
+        if self.draw_include_btn.isChecked():
+            self.draw_exclude_btn.setChecked(False)
+            self.image_widget.set_draw_mode('include')
+        else:
+            self.image_widget.set_draw_mode(None)
+
+    @Slot()
+    def on_draw_exclude_shortcut(self):
+        # Toggle Exclude mode
+        self.draw_exclude_btn.setChecked(not self.draw_exclude_btn.isChecked())
+        self.on_draw_exclude_clicked()
+
+    @Slot()
+    def on_draw_include_shortcut(self):
+        # Toggle Include mode
+        self.draw_include_btn.setChecked(not self.draw_include_btn.isChecked())
+        self.on_draw_include_clicked()
+
+    def reload_current_frame(self):
+        # Reload current frame (re-evaluates bounding boxes filtration)
+        row = self.frame_list_widget.currentRow()
+        if row != -1:
+            self.on_frame_selected(row)
 
 
 def main():
