@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 uuid = ""
 token = ""
+downloaded = 0
 
 
 @dataclass
@@ -22,7 +23,7 @@ class Photo:
     medium: dict
     small: dict
 
-    def download(self, destination: str, size: str):
+    def download(self, destination: str, size: str, *, log: bool = False):
         if os.path.exists(destination):
             return
         rinfo = (
@@ -38,6 +39,11 @@ class Photo:
         with open(destination, "wb") as file:
             response = requests.get(f"https://{rinfo['host']}/{rinfo['path']}")
             file.write(response.content)
+        os.utime(destination, (self.date.timestamp(), self.date.timestamp()))
+        global downloaded
+        downloaded += 1
+        if log:
+            print(f"\x1b[K{downloaded} files downloaded.", end="\r")
 
 
 @dataclass
@@ -82,7 +88,15 @@ class Camera:
         limit: int = 500,
         size: str = "large",
         before: datetime.datetime = datetime.datetime.now(),
+        *,
+        log: bool = False,
+        reset: bool = False,
     ):
+        if log:
+            print(f"Downloading photos from {self.name}.")
+        if reset:
+            global downloaded
+            downloaded = 0
         n = 0
         photos = self.photos(limit, before)
         while len(photos) > 0 and n < limit:
@@ -93,7 +107,7 @@ class Camera:
                     photo.date.strftime("%Y-%m-%d"),
                     photo.date.strftime("%H-%M-%S.jpg"),
                 )
-                photo.download(path, size)
+                photo.download(path, size, log=log)
                 n += 1
             photos = self.photos(limit, photos[len(photos) - 1].date)
 
@@ -211,15 +225,17 @@ def main():
             exit(1)
 
     # dump cameras to destination
-    print()
     for camera in [x for x in cams if x.name in namelist]:
         try:
-            print(f"Downloading from {camera.name}...")
-            camera.dump(destination, args.max, args.size)
+            camera.dump(destination, args.max, args.size, log=True)
         except Exception as e:
             print(e, file=sys.stderr)
             exit(1)
+    print()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nStopped.")
