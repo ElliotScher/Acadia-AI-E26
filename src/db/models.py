@@ -1,6 +1,7 @@
-from sqlalchemy import String, DateTime, Float, Integer, Boolean, ForeignKey, DDL, select, desc, event
+from sqlalchemy import String, DateTime, Float, Integer, Boolean, ForeignKey, DDL, select, desc, event, exists
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, Session, DeclarativeBase, mapped_column, relationship
 from datetime import datetime, timedelta
+import os
 
 class Base(DeclarativeBase):
     pass
@@ -18,6 +19,21 @@ class Image(Base):
     
     def get_entities (self, session: Session) -> list['Instance']:
         return session.scalars(select(Entity).join(Instance).where(Instance.image_id == self.id)).all()
+
+    @staticmethod
+    def import_from_dir (session: Session, dir: str):
+        for root, _, files in os.walk(dir):
+            for file in files:
+                if not (file.lower().endswith(".jpg") or file.lower().endswith(".jpeg") or file.lower().endswith(".png")):
+                    continue
+
+                path = os.path.join(root, file)
+                if session.query(exists().where(Image.path == path)).scalar():
+                    continue
+
+                image = Image(path=path, datetime=datetime.fromtimestamp(os.path.getmtime(path)))
+                session.add(image)
+        session.commit()
 
     def __repr__ (self) -> str:
         return f"Image({self.id})"
@@ -73,7 +89,7 @@ class Instance(Base):
         return f"Instance({self.image_id}, {self.entity_id})"
 
 trigger_ddl = DDL("""
-CREATE TRIGGER delete_entity_when_last_instance_deleted
+CREATE TRIGGER IF NOT EXISTS delete_entity_when_last_instance_deleted
 AFTER DELETE ON instance
 FOR EACH ROW
 WHEN NOT EXISTS (
@@ -85,7 +101,7 @@ END;
 """)
 
 trigger2_ddl = DDL("""
-CREATE TRIGGER delete_entity_when_last_instance_updated
+CREATE TRIGGER IF NOT EXISTS delete_entity_when_last_instance_updated
 AFTER UPDATE OF entity_id ON instance
 FOR EACH ROW
 WHEN NOT EXISTS (

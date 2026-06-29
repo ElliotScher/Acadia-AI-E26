@@ -4,7 +4,14 @@ import sys
 import image_tab as it
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from db import get_db
+from db.models import Image
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+
 class Root(QtWidgets.QMainWindow):
+    db: Engine
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Image Analyzer")
@@ -51,10 +58,11 @@ class Root(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
-        images = []
-        for root, _, files in os.walk(path):
-            images.extend([os.path.join(root, file) for file in files])
-        self.imageTab.gallery.addImages(images)
+        self.db = get_db(os.path.join(path, "photos.db"))
+
+        with Session(self.db) as session:
+            Image.import_from_dir(session, path)
+        # self.imageTab.gallery.addImages(images)
 
     @QtCore.Slot()
     def selectAll(self):
