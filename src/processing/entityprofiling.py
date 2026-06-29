@@ -302,52 +302,104 @@ class ProfileDatabase:
                     best_id = pid
         return best_id, best_sim
 
+def segments_intersect(p1, p2, p3, p4):
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+    
+    denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1)
+    if abs(denom) < 1e-9:
+        return False
+        
+    ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom
+    ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom
+    
+    return 0.0 <= ua <= 1.0 and 0.0 <= ub <= 1.0
+
+def point_in_polygon(px, py, polygon):
+    inside = False
+    n = len(polygon)
+    if n < 3:
+        return False
+    p1x, p1y = polygon[0]
+    for i in range(n + 1):
+        p2x, p2y = polygon[i % n]
+        if py > min(p1y, p2y):
+            if py <= max(p1y, p2y):
+                if px <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (py - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or px <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+    return inside
+
+def box_overlaps_polygon(box, polygon):
+    bx, by, bw, bh = box
+    
+    # 1. Check if any corner of the box is inside the polygon
+    box_corners = [
+        (bx, by),
+        (bx + bw, by),
+        (bx, by + bh),
+        (bx + bw, by + bh)
+    ]
+    for cx, cy in box_corners:
+        if point_in_polygon(cx, cy, polygon):
+            return True
+            
+    # 2. Check if any vertex of the polygon is inside the box
+    for px, py in polygon:
+        if bx <= px <= bx + bw and by <= py <= by + bh:
+            return True
+            
+    # 3. Check if any edge of the polygon intersects any of the 4 edges of the box
+    box_edges = [
+        ((bx, by), (bx + bw, by)),
+        ((bx + bw, by), (bx + bw, by + bh)),
+        ((bx, by + bh), (bx + bw, by + bh)),
+        ((bx, by), (bx, by + bh))
+    ]
+    
+    n = len(polygon)
+    for i in range(n):
+        p1 = polygon[i]
+        p2 = polygon[(i + 1) % n]
+        for e1, e2 in box_edges:
+            if segments_intersect(p1, p2, e1, e2):
+                return True
+                
+    return False
+
 def is_box_excluded_by_zones(box, zones, img_w, img_h):
     if not zones:
         return False
-    bx, by, bw, bh = box
+    
     has_inclusion_zones = False
     inside_at_least_one_inclusion = False
     
     for zone in zones:
-        nx, ny, nw, nh = zone['rect']
-        zx = nx * img_w
-        zy = ny * img_h
-        zw = nw * img_w
-        zh = nh * img_h
+        # Handle legacy 'rect' fields or convert them
+        if 'points' not in zone and 'rect' in zone:
+            nx, ny, nw, nh = zone['rect']
+            zone['points'] = [
+                (nx, ny),
+                (nx + nw, ny),
+                (nx + nw, ny + nh),
+                (nx, ny + nh)
+            ]
+        
+        polygon = [(nx * img_w, ny * img_h) for nx, ny in zone['points']]
         
         if zone['type'] == 'exclude':
-            # Calculate intersection
-            ix1 = max(bx, zx)
-            iy1 = max(by, zy)
-            ix2 = min(bx + bw, zx + zw)
-            iy2 = min(by + bh, zy + zh)
-            
-            if ix2 > ix1 and iy2 > iy1:
-                intersect_area = (ix2 - ix1) * (iy2 - iy1)
-                box_area = bw * bh
-                zone_area = zw * zh
-                if box_area > 0 and (intersect_area / box_area) > 0.10:
-                    return True
-                if zone_area > 0 and (intersect_area / zone_area) > 0.10:
-                    return True
+            if box_overlaps_polygon(box, polygon):
+                return True
         
         elif zone['type'] == 'include':
             has_inclusion_zones = True
-            # Check overlap with inclusion zone
-            ix1 = max(bx, zx)
-            iy1 = max(by, zy)
-            ix2 = min(bx + bw, zx + zw)
-            iy2 = min(by + bh, zy + zh)
-            
-            if ix2 > ix1 and iy2 > iy1:
-                intersect_area = (ix2 - ix1) * (iy2 - iy1)
-                box_area = bw * bh
-                zone_area = zw * zh
-                if box_area > 0 and (intersect_area / box_area) > 0.10:
-                    inside_at_least_one_inclusion = True
-                elif zone_area > 0 and (intersect_area / zone_area) > 0.10:
-                    inside_at_least_one_inclusion = True
+            if box_overlaps_polygon(box, polygon):
+                inside_at_least_one_inclusion = True
 
     if has_inclusion_zones and not inside_at_least_one_inclusion:
         return True

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, QCoreApplication, Slot, Signal
-from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont, QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QCoreApplication, Slot, Signal, QPointF
+from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont, QShortcut, QKeySequence, QPolygonF
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QListWidget, QFileDialog, QSplitter,
@@ -24,99 +24,75 @@ from src.processing.entityprofiling import (
     detect_entities
 )
 
-DARK_STYLESHEET = """
-QMainWindow {
-    background-color: #121212;
-}
-QWidget {
-    color: #e0e0e0;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 13px;
-}
-QFrame#sidebar {
-    background-color: #1a1a1a;
-    border-right: 1px solid #333333;
-}
-QListWidget {
-    background-color: #1e1e1e;
-    border: 1px solid #333333;
-    border-radius: 6px;
-    padding: 5px;
-    color: #ffffff;
-}
-QListWidget::item {
-    padding: 8px;
-    border-bottom: 1px solid #2a2a2a;
-    border-radius: 4px;
-}
-QListWidget::item:selected {
-    background-color: #007acc;
-    color: white;
-}
-QListWidget::item:hover {
-    background-color: #2a2a2a;
-}
-QGroupBox {
-    border: 1px solid #333333;
-    border-radius: 6px;
-    margin-top: 12px;
-    padding: 10px;
-    font-weight: bold;
-    color: #007acc;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 3px 0 3px;
-}
-QPushButton {
-    background-color: #333333;
-    border: 1px solid #555555;
-    border-radius: 4px;
-    padding: 8px 15px;
-    color: #ffffff;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #444444;
-    border-color: #007acc;
-}
-QPushButton:pressed {
-    background-color: #007acc;
-}
-QPushButton:disabled {
-    background-color: #222222;
-    border-color: #2c2c2c;
-    color: #666666;
-}
-QLineEdit {
-    background-color: #1e1e1e;
-    border: 1px solid #333333;
-    border-radius: 4px;
-    padding: 6px;
-    color: #ffffff;
-}
-QLineEdit:focus {
-    border-color: #007acc;
-}
-QLabel {
-    color: #e0e0e0;
-}
-QScrollBar:vertical {
-    border: none;
-    background: #1e1e1e;
-    width: 10px;
-    margin: 0px;
-}
-QScrollBar::handle:vertical {
-    background: #444444;
-    min-height: 20px;
-    border-radius: 5px;
-}
-QScrollBar::handle:vertical:hover {
-    background: #555555;
-}
-"""
+def segments_intersect(p1, p2, p3, p4):
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+    
+    denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1)
+    if abs(denom) < 1e-9:
+        return False
+        
+    ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom
+    ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom
+    
+    return 0.0 <= ua <= 1.0 and 0.0 <= ub <= 1.0
+
+def point_in_polygon(px, py, polygon):
+    inside = False
+    n = len(polygon)
+    if n < 3:
+        return False
+    p1x, p1y = polygon[0]
+    for i in range(n + 1):
+        p2x, p2y = polygon[i % n]
+        if py > min(p1y, p2y):
+            if py <= max(p1y, p2y):
+                if px <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (py - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or px <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+    return inside
+
+def box_overlaps_polygon(box, polygon):
+    bx, by, bw, bh = box
+    
+    # 1. Check if any corner of the box is inside the polygon
+    box_corners = [
+        (bx, by),
+        (bx + bw, by),
+        (bx, by + bh),
+        (bx + bw, by + bh)
+    ]
+    for cx, cy in box_corners:
+        if point_in_polygon(cx, cy, polygon):
+            return True
+            
+    # 2. Check if any vertex of the polygon is inside the box
+    for px, py in polygon:
+        if bx <= px <= bx + bw and by <= py <= by + bh:
+            return True
+            
+    # 3. Check if any edge of the polygon intersects any of the 4 edges of the box
+    box_edges = [
+        ((bx, by), (bx + bw, by)),
+        ((bx + bw, by), (bx + bw, by + bh)),
+        ((bx, by + bh), (bx + bw, by + bh)),
+        ((bx, by), (bx, by + bh))
+    ]
+    
+    n = len(polygon)
+    for i in range(n):
+        p1 = polygon[i]
+        p2 = polygon[(i + 1) % n]
+        for e1, e2 in box_edges:
+            if segments_intersect(p1, p2, e1, e2):
+                return True
+                
+    return False
 
 class ZoomTooltip(QWidget):
     """
@@ -220,13 +196,14 @@ class ImageWidget(QWidget):
         self.offset_x = 0
         self.offset_y = 0
 
-        # List of zones: list of dict {'type': 'exclude'|'include', 'rect': (nx, ny, nw, nh)}
+        # List of zones: list of dict {'type': 'exclude'|'include', 'points': [(nx, ny), ...]}
         self.zones = []
         self.active_zone_idx = -1
+        self.active_vertex_idx = -1
         
-        self.drag_mode = None  # None, 'move', 'resize_tl', 'resize_tr', 'resize_bl', 'resize_br', 'create'
+        self.drag_mode = None  # None, 'move_polygon', 'move_vertex', 'create'
         self.drag_start_pos = (0, 0)
-        self.drag_start_rect = (0, 0, 0, 0)
+        self.drag_start_points = []
         
         self.is_draw_mode = None  # None, 'exclude', or 'include'
         self.setMouseTracking(True)  # track mouse for hover cursor changes
@@ -241,7 +218,17 @@ class ImageWidget(QWidget):
 
     def set_zones(self, zones):
         self.zones = zones
+        for zone in self.zones:
+            if 'points' not in zone and 'rect' in zone:
+                nx, ny, nw, nh = zone['rect']
+                zone['points'] = [
+                    (nx, ny),
+                    (nx + nw, ny),
+                    (nx + nw, ny + nh),
+                    (nx, ny + nh)
+                ]
         self.active_zone_idx = -1
+        self.active_vertex_idx = -1
         self.update()
 
     def set_draw_mode(self, mode):
@@ -261,61 +248,6 @@ class ImageWidget(QWidget):
         orig_x = max(0, min(orig_x, self.pixmap.width()))
         orig_y = max(0, min(orig_y, self.pixmap.height()))
         return int(orig_x), int(orig_y)
-
-    def get_drag_mode_for_zone(self, pos, zone):
-        nx, ny, nw, nh = zone['rect']
-        img_w = self.pixmap.width()
-        img_h = self.pixmap.height()
-        
-        ex = nx * img_w
-        ey = ny * img_h
-        ew = nw * img_w
-        eh = nh * img_h
-        
-        sx = self.offset_x + ex * self.scale
-        sy = self.offset_y + ey * self.scale
-        sw = ew * self.scale
-        sh = eh * self.scale
-        
-        mx, my = pos.x(), pos.y()
-        threshold = 12  # Interaction handle area in screen pixels
-        
-        # TL corner check
-        if abs(mx - sx) <= threshold and abs(my - sy) <= threshold:
-            return 'resize_tl'
-        # TR corner check
-        elif abs(mx - (sx + sw)) <= threshold and abs(my - sy) <= threshold:
-            return 'resize_tr'
-        # BL corner check
-        elif abs(mx - sx) <= threshold and abs(my - (sy + sh)) <= threshold:
-            return 'resize_bl'
-        # BR corner check
-        elif abs(mx - (sx + sw)) <= threshold and abs(my - (sy + sh)) <= threshold:
-            return 'resize_br'
-            
-        # Inside rect check
-        if sx <= mx <= sx + sw and sy <= my <= sy + sh:
-            return 'move'
-            
-        return None
-
-    def find_active_zone(self, pos):
-        if not self.pixmap:
-            return -1, None
-            
-        # Check resize handles first (higher priority than overlapping moves)
-        for i, zone in enumerate(self.zones):
-            mode = self.get_drag_mode_for_zone(pos, zone)
-            if mode and mode.startswith('resize'):
-                return i, mode
-                
-        # Check move areas
-        for i, zone in enumerate(self.zones):
-            mode = self.get_drag_mode_for_zone(pos, zone)
-            if mode == 'move':
-                return i, mode
-                
-        return -1, None
 
     def paintEvent(self, event):
         if not self.pixmap or self.pixmap.isNull():
@@ -397,16 +329,19 @@ class ImageWidget(QWidget):
             img_h = self.pixmap.height()
             
             for i, zone in enumerate(self.zones):
-                nx, ny, nw, nh = zone['rect']
-                ex = nx * img_w
-                ey = ny * img_h
-                ew = nw * img_w
-                eh = nh * img_h
-
-                x = int(self.offset_x + ex * self.scale)
-                y = int(self.offset_y + ey * self.scale)
-                w = int(ew * self.scale)
-                h = int(eh * self.scale)
+                if 'points' not in zone and 'rect' in zone:
+                    nx, ny, nw, nh = zone['rect']
+                    zone['points'] = [(nx, ny), (nx+nw, ny), (nx+nw, ny+nh), (nx, ny+nh)]
+                
+                points = zone['points']
+                if not points:
+                    continue
+                    
+                poly = QPolygonF()
+                for nx, ny in points:
+                    px = self.offset_x + nx * img_w * self.scale
+                    py = self.offset_y + ny * img_h * self.scale
+                    poly.append(QPointF(px, py))
 
                 is_active = (i == self.active_zone_idx)
                 z_type = zone['type']
@@ -428,14 +363,17 @@ class ImageWidget(QWidget):
 
                 painter.setPen(border_pen)
                 painter.setBrush(fill_color)
-                painter.drawRect(x, y, w, h)
+                painter.drawPolygon(poly)
 
-                # Drawing Label
+                # Draw label near first point
                 painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                 painter.setPen(border_color)
-                painter.drawText(x + 5, y + 18, label_text)
+                first_nx, first_ny = points[0]
+                lx = int(self.offset_x + first_nx * img_w * self.scale)
+                ly = int(self.offset_y + first_ny * img_h * self.scale)
+                painter.drawText(lx + 5, ly + 18, label_text)
 
-                # Draw corner anchor squares for active zone
+                # Draw vertices as small anchor squares if active
                 if is_active:
                     anchor_pen = QPen(border_color, 2, Qt.PenStyle.SolidLine)
                     painter.setPen(anchor_pen)
@@ -443,77 +381,149 @@ class ImageWidget(QWidget):
                     
                     anchor_size = 8
                     half_size = anchor_size // 2
+                    for pt in poly:
+                        painter.drawRect(pt.x() - half_size, pt.y() - half_size, anchor_size, anchor_size)
+
+            # Draw preview line if currently drawing a new zone
+            if self.drag_mode == 'create' and self.active_zone_idx != -1:
+                points = self.zones[self.active_zone_idx]['points']
+                if points:
+                    last_nx, last_ny = points[-1]
+                    last_px = self.offset_x + last_nx * img_w * self.scale
+                    last_py = self.offset_y + last_ny * img_h * self.scale
                     
-                    corners = [
-                        (x, y),
-                        (x + w, y),
-                        (x, y + h),
-                        (x + w, y + h)
-                    ]
-                    for cx, cy in corners:
-                        painter.drawRect(cx - half_size, cy - half_size, anchor_size, anchor_size)
+                    # Current cursor position in widget coordinates
+                    cursor_pos = self.mapFromGlobal(self.cursor().pos())
+                    
+                    painter.setPen(QPen(QColor(255, 255, 255), 1, Qt.PenStyle.DashLine))
+                    painter.drawLine(QPointF(last_px, last_py), cursor_pos)
 
     def mousePressEvent(self, event):
         if not self.pixmap:
             return
 
         pos = event.position()
-        idx, mode = self.find_active_zone(pos)
         img_w = self.pixmap.width()
         img_h = self.pixmap.height()
 
-        # 1. If in draw mode: Left-click starts drawing a new zone
+        # 1. Draw mode: click to add/start polygon vertex
         if self.is_draw_mode and event.button() == Qt.MouseButton.LeftButton:
-            self.drag_mode = 'create'
-            self.drag_start_pos = self.map_to_orig(pos)
-            new_zone = {
-                'type': self.is_draw_mode,
-                'rect': (self.drag_start_pos[0] / img_w, self.drag_start_pos[1] / img_h, 0.0, 0.0)
-            }
-            self.zones.append(new_zone)
-            self.active_zone_idx = len(self.zones) - 1
-            self.drag_start_rect = (self.drag_start_pos[0], self.drag_start_pos[1], 0, 0)
+            curr_ox, curr_oy = self.map_to_orig(pos)
+            nx, ny = curr_ox / img_w, curr_oy / img_h
+            
+            if self.drag_mode != 'create':
+                self.drag_mode = 'create'
+                new_zone = {
+                    'type': self.is_draw_mode,
+                    'points': [(nx, ny)]
+                }
+                self.zones.append(new_zone)
+                self.active_zone_idx = len(self.zones) - 1
+            else:
+                # Check if click is close to the first point of the active polygon to close it
+                first_nx, first_ny = self.zones[self.active_zone_idx]['points'][0]
+                first_px = self.offset_x + first_nx * img_w * self.scale
+                first_py = self.offset_y + first_ny * img_h * self.scale
+                
+                # If within 15 screen pixels, close the polygon
+                if abs(pos.x() - first_px) <= 15 and abs(pos.y() - first_py) <= 15:
+                    if len(self.zones[self.active_zone_idx]['points']) >= 3:
+                        self.drag_mode = None
+                        self.is_draw_mode = None
+                        self.zonesChanged.emit(self.zones)
+                        self.unsetCursor()
+                    else:
+                        self.zones.pop(self.active_zone_idx)
+                        self.active_zone_idx = -1
+                        self.drag_mode = None
+                        self.is_draw_mode = None
+                        self.unsetCursor()
+                else:
+                    self.zones[self.active_zone_idx]['points'].append((nx, ny))
             self.update()
             return
 
-        # 2. Ordinary left-click: select zone, move, resize, or select box
+        # 2. Regular Left-click: check if clicking vertex or inside polygon to move/edit, or select box
         if event.button() == Qt.MouseButton.LeftButton:
-            if idx != -1:
-                # Drag or resize existing zone
-                self.active_zone_idx = idx
-                self.drag_mode = mode
-                self.drag_start_pos = self.map_to_orig(pos)
+            near_vertex = False
+            for zone_idx, zone in enumerate(self.zones):
+                if 'points' not in zone and 'rect' in zone:
+                    nx, ny, nw, nh = zone['rect']
+                    zone['points'] = [(nx, ny), (nx+nw, ny), (nx+nw, ny+nh), (nx, ny+nh)]
                 
-                # Convert normalized start rect to absolute
-                nx, ny, nw, nh = self.zones[idx]['rect']
-                self.drag_start_rect = (nx * img_w, ny * img_h, nw * img_w, nh * img_h)
+                for v_idx, (nx, ny) in enumerate(zone['points']):
+                    vx = self.offset_x + nx * img_w * self.scale
+                    vy = self.offset_y + ny * img_h * self.scale
+                    if abs(pos.x() - vx) <= 10 and abs(pos.y() - vy) <= 10:
+                        self.active_zone_idx = zone_idx
+                        self.active_vertex_idx = v_idx
+                        self.drag_mode = 'move_vertex'
+                        near_vertex = True
+                        break
+                if near_vertex:
+                    break
+                    
+            if near_vertex:
                 self.update()
-            else:
-                self.active_zone_idx = -1
-                self.update()
+                return
+
+            inside_poly = False
+            orig_x, orig_y = self.map_to_orig(pos)
+            for zone_idx, zone in enumerate(self.zones):
+                if 'points' not in zone and 'rect' in zone:
+                    nx, ny, nw, nh = zone['rect']
+                    zone['points'] = [(nx, ny), (nx+nw, ny), (nx+nw, ny+nh), (nx, ny+nh)]
                 
-                # Standard left-click selection of bounding boxes
-                orig_x, orig_y = self.map_to_orig(pos)
-                import sys
-                print(f"[DEBUG] Mouse click at widget position: {event.position().x():.1f}, {event.position().y():.1f} -> mapped to original image coordinates: {orig_x}, {orig_y}", file=sys.stderr)
-                clicked_idx = -1
-                min_area = float('inf')
-                for i, (bx, by, bw, bh) in enumerate(self.boxes):
-                    if bx <= orig_x <= bx + bw and by <= orig_y <= by + bh:
-                        area = bw * bh
-                        if area < min_area:
-                            min_area = area
-                            clicked_idx = i
-                print(f"[DEBUG] Click mapped to box index: {clicked_idx}", file=sys.stderr)
-                if clicked_idx != -1:
-                    self.entityClicked.emit(clicked_idx)
+                poly_abs = [(px * img_w, py * img_h) for px, py in zone['points']]
+                if point_in_polygon(orig_x, orig_y, poly_abs):
+                    self.active_zone_idx = zone_idx
+                    self.drag_mode = 'move_polygon'
+                    self.drag_start_pos = self.map_to_orig(pos)
+                    self.drag_start_points = list(zone['points'])
+                    inside_poly = True
+                    break
+                    
+            if inside_poly:
+                self.update()
+                return
+
+            self.active_zone_idx = -1
+            self.active_vertex_idx = -1
+            self.update()
+
+            orig_x, orig_y = self.map_to_orig(pos)
+            import sys
+            print(f"[DEBUG] Mouse click at widget position: {pos.x():.1f}, {pos.y():.1f} -> mapped to original image coordinates: {orig_x}, {orig_y}", file=sys.stderr)
+            clicked_idx = -1
+            min_area = float('inf')
+            for i, (bx, by, bw, bh) in enumerate(self.boxes):
+                if bx <= orig_x <= bx + bw and by <= orig_y <= by + bh:
+                    area = bw * bh
+                    if area < min_area:
+                        min_area = area
+                        clicked_idx = i
+            print(f"[DEBUG] Click mapped to box index: {clicked_idx}", file=sys.stderr)
+            if clicked_idx != -1:
+                self.entityClicked.emit(clicked_idx)
             return
 
         elif event.button() == Qt.MouseButton.RightButton:
-            if idx != -1:
-                # Right-click inside a zone deletes it
-                self.zones.pop(idx)
+            orig_x, orig_y = self.map_to_orig(pos)
+            delete_idx = -1
+            for zone_idx, zone in enumerate(self.zones):
+                if 'points' not in zone and 'rect' in zone:
+                    nx, ny, nw, nh = zone['rect']
+                    zone['points'] = [(nx, ny), (nx+nw, ny), (nx+nw, ny+nh), (nx, ny+nh)]
+                
+                poly_abs = [(px * img_w, py * img_h) for px, py in zone['points']]
+                if point_in_polygon(orig_x, orig_y, poly_abs):
+                    delete_idx = zone_idx
+                    break
+            
+            if delete_idx != -1:
+                self.zones.pop(delete_idx)
                 self.active_zone_idx = -1
+                self.active_vertex_idx = -1
                 self.zonesChanged.emit(self.zones)
                 self.update()
 
@@ -522,100 +532,96 @@ class ImageWidget(QWidget):
             return
 
         pos = event.position()
+        img_w = self.pixmap.width()
+        img_h = self.pixmap.height()
 
-        if self.drag_mode:
+        if self.drag_mode == 'create':
+            self.update()
+            
+        elif self.drag_mode == 'move_vertex':
+            curr_ox, curr_oy = self.map_to_orig(pos)
+            self.zones[self.active_zone_idx]['points'][self.active_vertex_idx] = (curr_ox / img_w, curr_oy / img_h)
+            self.update()
+
+        elif self.drag_mode == 'move_polygon':
             curr_ox, curr_oy = self.map_to_orig(pos)
             start_ox, start_oy = self.drag_start_pos
-            sx, sy, sw, sh = self.drag_start_rect
-            
-            img_w = self.pixmap.width()
-            img_h = self.pixmap.height()
             dx = curr_ox - start_ox
             dy = curr_oy - start_oy
-
-            if self.drag_mode == 'create':
-                x1, y1 = start_ox, start_oy
-                x2, y2 = curr_ox, curr_oy
-                self.zones[self.active_zone_idx]['rect'] = (
-                    min(x1, x2) / img_w,
-                    min(y1, y2) / img_h,
-                    abs(x2 - x1) / img_w,
-                    abs(y2 - y1) / img_h
-                )
-
-            elif self.drag_mode == 'move':
-                new_x = max(0, min(sx + dx, img_w - sw))
-                new_y = max(0, min(sy + dy, img_h - sh))
-                self.zones[self.active_zone_idx]['rect'] = (new_x / img_w, new_y / img_h, sw / img_w, sh / img_h)
-
-            elif self.drag_mode == 'resize_br':
-                new_w = max(10, min(sw + dx, img_w - sx))
-                new_h = max(10, min(sh + dy, img_h - sy))
-                self.zones[self.active_zone_idx]['rect'] = (sx / img_w, sy / img_h, new_w / img_w, new_h / img_h)
-
-            elif self.drag_mode == 'resize_tl':
-                dx = min(dx, sw - 10)
-                dy = min(dy, sh - 10)
-                new_x = max(0, sx + dx)
-                new_y = max(0, sy + dy)
-                new_w = sw - (new_x - sx)
-                new_h = sh - (new_y - sy)
-                self.zones[self.active_zone_idx]['rect'] = (new_x / img_w, new_y / img_h, new_w / img_w, new_h / img_h)
-
-            elif self.drag_mode == 'resize_tr':
-                dy = min(dy, sh - 10)
-                new_y = max(0, sy + dy)
-                new_w = max(10, min(sw + dx, img_w - sx))
-                new_h = sh - (new_y - sy)
-                self.zones[self.active_zone_idx]['rect'] = (sx / img_w, new_y / img_h, new_w / img_w, new_h / img_h)
-
-            elif self.drag_mode == 'resize_bl':
-                dx = min(dx, sw - 10)
-                new_x = max(0, sx + dx)
-                new_w = sw - (new_x - sx)
-                new_h = max(10, min(sh + dy, img_h - sy))
-                self.zones[self.active_zone_idx]['rect'] = (new_x / img_w, sy / img_h, new_w / img_w, new_h / img_h)
-
+            
+            new_points = []
+            for sx, sy in self.drag_start_points:
+                abs_x = sx * img_w + dx
+                abs_y = sy * img_h + dy
+                abs_x = max(0, min(abs_x, img_w))
+                abs_y = max(0, min(abs_y, img_h))
+                new_points.append((abs_x / img_w, abs_y / img_h))
+                
+            self.zones[self.active_zone_idx]['points'] = new_points
             self.update()
 
         else:
-            # Hover cursor update based on mouse position
-            idx, mode = self.find_active_zone(pos)
-            self.active_zone_idx = idx
-            if idx != -1:
-                if mode == 'move':
-                    self.setCursor(Qt.CursorShape.SizeAllCursor)
-                elif mode in ['resize_tl', 'resize_br']:
-                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-                elif mode in ['resize_tr', 'resize_bl']:
-                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-            else:
-                if self.is_draw_mode:
-                    self.setCursor(Qt.CursorShape.CrossCursor)
-                else:
-                    self.unsetCursor()
+            near_vertex = False
+            for zone_idx, zone in enumerate(self.zones):
+                if 'points' not in zone and 'rect' in zone:
+                    nx, ny, nw, nh = zone['rect']
+                    zone['points'] = [(nx, ny), (nx+nw, ny), (nx+nw, ny+nh), (nx, ny+nh)]
+                
+                for v_idx, (nx, ny) in enumerate(zone['points']):
+                    vx = self.offset_x + nx * img_w * self.scale
+                    vy = self.offset_y + ny * img_h * self.scale
+                    if abs(pos.x() - vx) <= 10 and abs(pos.y() - vy) <= 10:
+                        self.setCursor(Qt.CursorShape.SizeAllCursor)
+                        near_vertex = True
+                        break
+                if near_vertex:
+                    break
+            
+            if not near_vertex:
+                inside_poly = False
+                orig_x, orig_y = self.map_to_orig(pos)
+                for zone_idx, zone in enumerate(self.zones):
+                    if 'points' not in zone and 'rect' in zone:
+                        nx, ny, nw, nh = zone['rect']
+                        zone['points'] = [(nx, ny), (nx+nw, ny), (nx+nw, ny+nh), (nx, ny+nh)]
+                    
+                    poly_abs = [(px * img_w, py * img_h) for px, py in zone['points']]
+                    if point_in_polygon(orig_x, orig_y, poly_abs):
+                        self.setCursor(Qt.CursorShape.PointingHandCursor)
+                        inside_poly = True
+                        break
+                
+                if not inside_poly:
+                    if self.is_draw_mode:
+                        self.setCursor(Qt.CursorShape.CrossCursor)
+                    else:
+                        self.unsetCursor()
             self.update()
 
     def mouseReleaseEvent(self, event):
         if not self.pixmap:
             return
 
-        if self.drag_mode:
-            if self.drag_mode == 'create':
-                nx, ny, nw, nh = self.zones[self.active_zone_idx]['rect']
-                img_w = self.pixmap.width()
-                img_h = self.pixmap.height()
-                if (nw * img_w) < 10 or (nh * img_h) < 10:
-                    self.zones.pop(self.active_zone_idx)
-                    self.active_zone_idx = -1
-
+        if self.drag_mode in ['move_vertex', 'move_polygon']:
             self.drag_mode = None
-            if self.is_draw_mode:
-                self.is_draw_mode = None
-                
             self.zonesChanged.emit(self.zones)
             self.update()
             self.unsetCursor()
+
+    def mouseDoubleClickEvent(self, event):
+        if self.drag_mode == 'create':
+            if len(self.zones[self.active_zone_idx]['points']) >= 3:
+                self.drag_mode = None
+                self.is_draw_mode = None
+                self.zonesChanged.emit(self.zones)
+                self.unsetCursor()
+            else:
+                self.zones.pop(self.active_zone_idx)
+                self.active_zone_idx = -1
+                self.drag_mode = None
+                self.is_draw_mode = None
+                self.unsetCursor()
+            self.update()
 
 
 class LabelerApp(QMainWindow):
@@ -1414,54 +1420,34 @@ class LabelerApp(QMainWindow):
             
             self.gallery_layout.insertWidget(self.gallery_layout.count() - 1, item_frame)
 
+
+
     def is_box_excluded(self, box, img_w, img_h):
-        # Coordinates of the box
-        bx, by, bw, bh = box
-        
         # Check exclusion zones
         has_inclusion_zones = False
         inside_at_least_one_inclusion = False
         
         for zone in self.zones:
-            nx, ny, nw, nh = zone['rect']
-            zx = nx * img_w
-            zy = ny * img_h
-            zw = nw * img_w
-            zh = nh * img_h
+            # Handle legacy 'rect' fields or convert them
+            if 'points' not in zone and 'rect' in zone:
+                nx, ny, nw, nh = zone['rect']
+                zone['points'] = [
+                    (nx, ny),
+                    (nx + nw, ny),
+                    (nx + nw, ny + nh),
+                    (nx, ny + nh)
+                ]
+            
+            polygon = [(nx * img_w, ny * img_h) for nx, ny in zone['points']]
             
             if zone['type'] == 'exclude':
-                # Calculate intersection
-                ix1 = max(bx, zx)
-                iy1 = max(by, zy)
-                ix2 = min(bx + bw, zx + zw)
-                iy2 = min(by + bh, zy + zh)
-                
-                if ix2 > ix1 and iy2 > iy1:
-                    intersect_area = (ix2 - ix1) * (iy2 - iy1)
-                    # Exclude if overlap is > 10% of either box area or zone area
-                    box_area = bw * bh
-                    zone_area = zw * zh
-                    if box_area > 0 and (intersect_area / box_area) > 0.10:
-                        return True
-                    if zone_area > 0 and (intersect_area / zone_area) > 0.10:
-                        return True
+                if box_overlaps_polygon(box, polygon):
+                    return True
             
             elif zone['type'] == 'include':
                 has_inclusion_zones = True
-                # Check overlap with inclusion zone
-                ix1 = max(bx, zx)
-                iy1 = max(by, zy)
-                ix2 = min(bx + bw, zx + zw)
-                iy2 = min(by + bh, zy + zh)
-                
-                if ix2 > ix1 and iy2 > iy1:
-                    intersect_area = (ix2 - ix1) * (iy2 - iy1)
-                    box_area = bw * bh
-                    zone_area = zw * zh
-                    if box_area > 0 and (intersect_area / box_area) > 0.10:
-                        inside_at_least_one_inclusion = True
-                    elif zone_area > 0 and (intersect_area / zone_area) > 0.10:
-                        inside_at_least_one_inclusion = True
+                if box_overlaps_polygon(box, polygon):
+                    inside_at_least_one_inclusion = True
 
         if has_inclusion_zones and not inside_at_least_one_inclusion:
             return True
