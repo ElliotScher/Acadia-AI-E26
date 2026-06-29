@@ -2,40 +2,68 @@ import os
 import datetime
 import math
 
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from db.models import Image
 from PySide6 import QtCore, QtGui, QtWidgets
 
+class GalleryModel(QtCore.QAbstractListModel):
+    session: Session
+    images: dict[str, Image]
 
-class Image(QtWidgets.QListWidgetItem):
-    def __init__(self, parent: QtWidgets.QListWidget, fname: str):
-        super().__init__(parent)
-        self.name = fname
-        self.setIcon(QtGui.QIcon(self.name))
+    def __init__(self, session: Session):
+        self.session = session
+        self.images = dict()
+        super().__init__()
+    
+    def getByIndex(self, index:  QtCore.QModelIndex):
+        return self.session.scalar(select(Image).offset(index.row()).limit(1))
+    
+    def data(self, index: QtCore.QModelIndex, role):
+        if role == QtCore.Qt.ItemDataRole.DecorationRole:
+            data = self.getByIndex(index)
+            if data.path in self.images:
+                return self.images[data.path]
+            else:
+                if len(self.images) > 300:
+                    self.images = dict()
+                img = QtGui.QImage(data.path).scaled(180, 160)
+                self.images[data.path] = img
+                return img
 
-    def getdt(self):
-        return datetime.datetime.fromtimestamp(os.stat(self.name).st_mtime)
+    def rowCount(self, index):
+        return self.session.query(Image).count()
 
 class ImageTab(QtWidgets.QWidget):
+    session: Session
+
     def __init__(self):
         super().__init__()
-        layout = QtWidgets.QHBoxLayout(self)
+        self.layout = QtWidgets.QHBoxLayout(self)
         self.gallery = ImageGallery()
-        layout.addWidget(self.gallery)
+        self.layout.addWidget(self.gallery)
         self.imageInfo = ImageInfo()
-        layout.addWidget(self.imageInfo)
-        self.gallery.itemSelectionChanged.connect(self.newselection)
+        self.layout.addWidget(self.imageInfo)
 
     @QtCore.Slot()
     def newselection(self):
-        selection: list[Image] = self.gallery.selectedItems() # type: ignore
+        selection: list[Image] = list(map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())) # type: ignore
         self.imageInfo.showinfo(selection)
+    
+    @QtCore.Slot()
+    def setsession(self, session: Session):
+        self.session = session
+
+        self.galleryModel = GalleryModel(session)
+        self.gallery.setModel(self.galleryModel)
+        self.gallery.selectionModel().selectionChanged.connect(self.newselection)
 
 
-class ImageGallery(QtWidgets.QListWidget):
+class ImageGallery(QtWidgets.QListView):
     def __init__(self):
         super().__init__()
         self.setUniformItemSizes(True)
-        self.iconaspect = 1.5
-        self.setIconSize(QtCore.QSize(math.floor(self.iconaspect * 100), 100))
+        self.setIconSize(QtCore.QSize(100, 100))
         self.setViewMode(self.ViewMode.IconMode)
         self.setVerticalScrollMode(self.ScrollMode.ScrollPerPixel)
         self.setResizeMode(self.ResizeMode.Adjust)
@@ -44,16 +72,10 @@ class ImageGallery(QtWidgets.QListWidget):
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
 
-    def addImages(self, images: list[str]):
-        for image in images:
-            reader = QtGui.QImageReader(image)
-            if reader.canRead():
-                Image(self, image)
-
     @QtCore.Slot()
     def invertSelection(self):
-        first = self.indexFromItem(self.item(0))
-        last = self.indexFromItem(self.item(self.count() - 1))
+        first = self.model().createIndex(0, 0)
+        last = self.model().createIndex(self.model().rowCount(0) - 1, 0)
         self.selectionModel().select(
             QtCore.QItemSelection(first, last),
             self.selectionModel().SelectionFlag.Toggle,
@@ -86,7 +108,7 @@ class ImageInfo(QtWidgets.QGroupBox):
 
     def showone(self, image: Image):
         self.imgcount.setText("There can only be one!\n")
-        self.imgdate.setText(image.getdt().strftime("%Y-%m-%d %H:%M:%S"))
+        self.imgdate.setText(image.datetime.strftime("%Y-%m-%d %H:%M:%S"))
         self.info.show()
         self.placeholder.hide()
 

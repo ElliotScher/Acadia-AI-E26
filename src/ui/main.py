@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
+    session: Session
 
     def __init__(self):
         super().__init__()
@@ -59,9 +60,9 @@ class Root(QtWidgets.QMainWindow):
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
         self.db = get_db(os.path.join(path, "photos.db"))
-
-        with Session(self.db) as session:
-            Image.import_from_dir(session, path)
+        self.session = Session(self.db)
+        Image.import_from_dir(self.session, path)
+        self.imageTab.setsession(self.session)
         # self.imageTab.gallery.addImages(images)
 
     @QtCore.Slot()
