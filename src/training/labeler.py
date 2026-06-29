@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QListWidget, QFileDialog, QSplitter,
     QScrollArea, QGroupBox, QMessageBox, QProgressDialog, QFrame, QFormLayout,
-    QTabWidget, QComboBox
+    QTabWidget, QComboBox, QCheckBox
 )
 
 # Add project root to python path to allow imports from src
@@ -638,6 +638,9 @@ class LabelerApp(QMainWindow):
         self.thumbs_dir = None
         
         self.all_images = []
+        self.visible_images = []
+        self.yolo_metadata = {}
+        self.category_checkboxes = {}
         self.labels_db = {}       # filename -> list of {'box': [x,y,w,h], 'id': ID}
         self.features_cache = {}  # filename -> {str(box): list_of_floats}
         
@@ -675,6 +678,21 @@ class LabelerApp(QMainWindow):
         self.dir_label = QLabel("No directory loaded")
         self.dir_label.setWordWrap(True)
         sidebar_layout.addWidget(self.dir_label)
+
+        # Category Filter Group
+        self.filter_group_box = QGroupBox("Filter Categories")
+        self.filter_layout = QVBoxLayout(self.filter_group_box)
+        sidebar_layout.addWidget(self.filter_group_box)
+
+        # Clear Cache Button
+        self.clear_cache_btn = QPushButton("Clear Cache && Labels")
+        self.clear_cache_btn.clicked.connect(self.on_clear_cache_clicked)
+        self.clear_cache_btn.setStyleSheet(
+            "QPushButton { font-weight: bold; background-color: #d32f2f; color: white; padding: 4px; }"
+            "QPushButton:disabled { background-color: #333; color: #777; }"
+        )
+        self.clear_cache_btn.setEnabled(False)
+        sidebar_layout.addWidget(self.clear_cache_btn)
 
         # Compact Zones controls layout
         zones_h_layout = QHBoxLayout()
@@ -971,6 +989,34 @@ class LabelerApp(QMainWindow):
             QMessageBox.information(self, "No Images", "No images (.jpg, .jpeg, .png, .bmp) found in the selected folder.")
             return
 
+        # Parse YOLO metadata (categories) from filenames
+        # Expected naming pattern from yolo.py: *-{index}-{category}.suffix
+        self.yolo_metadata = {}
+        categories = set()
+        for img_path in self.all_images:
+            parts = img_path.stem.split("-")
+            # Must have at least 3 parts (stem, index, category) and index (parts[-2]) must be a digit
+            if len(parts) >= 3 and parts[-2].isdigit():
+                cat = parts[-1]
+                self.yolo_metadata[img_path.name] = {"category": cat}
+                categories.add(cat)
+
+        # Clear old checkboxes
+        for cb in self.category_checkboxes.values():
+            cb.deleteLater()
+        self.category_checkboxes.clear()
+
+        # Add a checkbox for each unique category found
+        for cat in sorted(categories):
+            cb = QCheckBox(cat)
+            cb.setChecked(True)
+            cb.stateChanged.connect(self.on_filter_checkbox_changed)
+            self.filter_layout.addWidget(cb)
+            self.category_checkboxes[cat] = cb
+
+        # Set visible images (default is All)
+        self.visible_images = list(self.all_images)
+
         # Initialize ProfileDatabase
         self.profile_db = ProfileDatabase()
 
@@ -1038,24 +1084,30 @@ class LabelerApp(QMainWindow):
 
         # Update frame list in UI
         self.frame_list_widget.clear()
-        for img_path in self.all_images:
+        for img_path in self.visible_images:
             self.frame_list_widget.addItem(img_path.name)
 
         # Load first image
-        self.frame_list_widget.setCurrentRow(0)
+        if self.visible_images:
+            self.frame_list_widget.setCurrentRow(0)
         self.update_ids_gallery()
+        self.clear_cache_btn.setEnabled(True)
 
     def update_stats(self):
         total_frames = len(self.all_images)
+        visible_frames = len(self.visible_images)
         unique_entities = len(self.profile_db.profiles)
-        self.stats_label.setText(f"Unique Entities: {unique_entities} | Frames: {total_frames}")
+        if total_frames == visible_frames:
+            self.stats_label.setText(f"Unique Entities: {unique_entities} | Frames: {total_frames}")
+        else:
+            self.stats_label.setText(f"Unique Entities: {unique_entities} | Frames: {visible_frames}/{total_frames}")
 
     @Slot(int)
     def on_frame_selected(self, row_idx):
-        if row_idx < 0 or row_idx >= len(self.all_images):
+        if row_idx < 0 or row_idx >= len(self.visible_images):
             return
         
-        self.current_img_path = self.all_images[row_idx]
+        self.current_img_path = self.visible_images[row_idx]
         self.current_img = cv2.imread(str(self.current_img_path))
         
         # Load existing labels for this image
@@ -1331,7 +1383,7 @@ class LabelerApp(QMainWindow):
             # Advance to next frame
             current_row = self.frame_list_widget.currentRow()
             print(f"[DEBUG] advance_next: advancing to next frame, current row={current_row}", file=sys.stderr)
-            if current_row < len(self.all_images) - 1:
+            if current_row < len(self.visible_images) - 1:
                 self.frame_list_widget.setCurrentRow(current_row + 1)
             else:
                 QMessageBox.information(self, "Finished", "All frames in this directory have been processed!")
@@ -1386,7 +1438,7 @@ class LabelerApp(QMainWindow):
     @Slot()
     def on_next_frame(self):
         row = self.frame_list_widget.currentRow()
-        if row < len(self.all_images) - 1:
+        if row < len(self.visible_images) - 1:
             self.frame_list_widget.setCurrentRow(row + 1)
 
 
@@ -1528,6 +1580,99 @@ class LabelerApp(QMainWindow):
         # Toggle Include mode
         self.draw_include_btn.setChecked(not self.draw_include_btn.isChecked())
         self.on_draw_include_clicked()
+
+    @Slot()
+    def on_filter_checkbox_changed(self):
+        if not self.dir_path:
+            return
+            
+        selected_cats = {cat for cat, cb in self.category_checkboxes.items() if cb.isChecked()}
+        
+        if len(selected_cats) == len(self.category_checkboxes) or not self.category_checkboxes:
+            self.visible_images = list(self.all_images)
+        else:
+            self.visible_images = []
+            for img_path in self.all_images:
+                meta = self.yolo_metadata.get(img_path.name)
+                if meta:
+                    cat = meta.get("category")
+                    if cat in selected_cats:
+                        self.visible_images.append(img_path)
+                    
+        # Update frame list in UI
+        self.frame_list_widget.blockSignals(True)
+        self.frame_list_widget.clear()
+        for img_path in self.visible_images:
+            self.frame_list_widget.addItem(img_path.name)
+        self.frame_list_widget.blockSignals(False)
+
+        # Update stats
+        self.update_stats()
+
+        # Load first visible image
+        if self.visible_images:
+            self.frame_list_widget.setCurrentRow(0)
+        else:
+            self.current_img_path = None
+            self.current_img = None
+            self.detected_boxes = []
+            self.current_labels = {}
+            self.active_box_idx = -1
+            self.image_widget.set_image(None, [], {}, -1)
+            self.update_ui_for_active_box()
+
+    @Slot()
+    def on_clear_cache_clicked(self):
+        if not self.dir_path:
+            return
+
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self,
+            "Confirm Clear Cache",
+            "Are you sure you want to clear the cache and delete all labels, features, and thumbnails? This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # 1. Delete JSON files
+        try:
+            if self.labels_file and self.labels_file.exists():
+                self.labels_file.unlink()
+            if self.cache_file and self.cache_file.exists():
+                self.cache_file.unlink()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to delete JSON files: {e}")
+
+        # 2. Delete thumbnails
+        try:
+            if self.thumbs_dir and self.thumbs_dir.exists():
+                for p in self.thumbs_dir.glob("*"):
+                    if p.is_file():
+                        p.unlink()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to delete thumbnails: {e}")
+
+        # 3. Reset state variables
+        self.labels_db = {}
+        self.features_cache = {}
+        self.current_labels = {}
+        self.profile_db = ProfileDatabase()
+        self.zones = []
+        self.image_widget.set_zones([])
+        self.clear_exclusion_btn.setEnabled(False)
+        self.active_box_idx = -1
+        self.active_crop_feat = None
+        self.predicted_id = None
+
+        # 4. Refresh UI
+        self.update_stats()
+        self.update_ids_gallery()
+        self.reload_current_frame()
+        
+        QMessageBox.information(self, "Cache Cleared", "Labels database, features cache, and thumbnails have been successfully cleared.")
 
     def reload_current_frame(self):
         # Reload current frame (re-evaluates bounding boxes filtration)

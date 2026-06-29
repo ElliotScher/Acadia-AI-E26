@@ -42,6 +42,8 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
             for box in r.boxes:
                 cls = int(box.cls[0])
                 label = thread_model.names[cls]
+                if label in ["car", "bus", "truck"]:
+                    label = "car"
                 
                 with total_counts_lock:
                     total_counts[label] += 1
@@ -69,7 +71,7 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
                 #     (0, 255, 0),
                 #     5
                 # )
-                out_path = out_path_base.with_name(f"{out_path_base.stem}-{i}{out_path_base.suffix}")
+                out_path = out_path_base.with_name(f"{out_path_base.stem}-{i}-{label}{out_path_base.suffix}")
                 cv2.imwrite(str(out_path), image_copy)
 
         progress_bar.update(1)
@@ -127,7 +129,10 @@ def main():
     try:
         model = YOLO(args.model)
         for cls in TARGET_CLASSES:
-            total_counts[model.names[cls]] = 0
+            label = model.names[cls]
+            if label in ["car", "bus", "truck"]:
+                label = "car"
+            total_counts[label] = 0
     except Exception as e:
         print(f"Error loading model '{args.model}': {e}", file=sys.stderr)
         sys.exit(1)
