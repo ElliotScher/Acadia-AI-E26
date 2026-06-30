@@ -56,22 +56,28 @@ def load_model(model_name: str) -> YOLO:
     return YOLO(model_name)
 
 
-def detect_objects(model: YOLO, img_path: Union[Path, str], conf: float = 0.25) -> List[Any]:
+def detect_objects(
+    model: YOLO,
+    img_path: Union[Path, str],
+    conf: float = 0.25,
+    classes: List[int] = TARGET_CLASSES
+) -> List[Any]:
     """
     Runs YOLO model prediction and returns raw results.
     """
     results = model.predict(
         source=str(img_path),
         conf=conf,
-        classes=TARGET_CLASSES,
+        classes=classes,
         verbose=False
     )
     return results
 
 
-def map_class(cls_id: int, cls_name: str) -> str | None:
+def map_class(cls_id: int, cls_name: str) -> str:
     """
     Maps class ID or name to target categories: 'car', 'person', 'bike'.
+    If no mapping is found, returns the raw cls_name.
     """
     # 1. Try mapping by class ID first
     if cls_id in CLASS_ID_MAPPING:
@@ -87,7 +93,7 @@ def map_class(cls_id: int, cls_name: str) -> str | None:
         return "bike"
     if "person" in name_lower:
         return "person"
-    return None
+    return cls_name
 
 
 def parse_detections(results: List[Any], model_names: Dict[int, str], img_path: Path) -> List[Detection]:
@@ -101,7 +107,7 @@ def parse_detections(results: List[Any], model_names: Dict[int, str], img_path: 
             raw_label = model_names.get(cls_id, "")
             normalized_label = map_class(cls_id, raw_label)
             
-            if normalized_label is not None:
+            if normalized_label:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
                 detections.append(Detection(
@@ -149,12 +155,13 @@ def process_single_image(
     input_folder: Path,
     output_folder: Path,
     save_images: bool = True,
-    conf: float = 0.25
+    conf: float = 0.25,
+    classes: List[int] = TARGET_CLASSES
 ) -> List[Detection]:
     """
     Processes a single image: runs detection, parses results, and optionally saves output.
     """
-    raw_results = detect_objects(model, img_path, conf)
+    raw_results = detect_objects(model, img_path, conf, classes)
     detections = parse_detections(raw_results, model.names, img_path)
     
     if save_images:
@@ -170,7 +177,8 @@ def process_image_worker(
     model_name: str,
     save_images: bool,
     conf: float,
-    progress_bar: tqdm | None
+    progress_bar: tqdm | None,
+    classes: List[int] = TARGET_CLASSES
 ) -> None:
     """
     Worker function executed by threads in batch mode.
@@ -189,15 +197,15 @@ def process_image_worker(
             input_folder=input_folder,
             output_folder=output_folder,
             save_images=save_images,
-            conf=conf
+            conf=conf,
+            classes=classes
         )
 
         # Update global counts
         for det in detections:
             label = det.label
             with total_counts_lock:
-                if label in total_counts:
-                    total_counts[label] += 1
+                total_counts[label] = total_counts.get(label, 0) + 1
 
         if progress_bar:
             progress_bar.update(1)
@@ -211,7 +219,8 @@ def batch_detect_and_process(
     save_images: bool = True,
     conf: float = 0.25,
     num_threads: int = 1,
-    show_progress: bool = True
+    show_progress: bool = True,
+    classes: List[int] = TARGET_CLASSES
 ) -> None:
     """
     Performs multi-threaded batch detection and processing on a list of images.
@@ -231,7 +240,7 @@ def batch_detect_and_process(
             continue
         thread = threading.Thread(
             target=process_image_worker,
-            args=(imgs, input_folder, output_folder, model_name, save_images, conf, progress_bar)
+            args=(imgs, input_folder, output_folder, model_name, save_images, conf, progress_bar, classes)
         )
         threads.append(thread)
         thread.start()
@@ -274,6 +283,13 @@ def main() -> None:
         action="store_true",
         help="Do not save annotated images to the output directory."
     )
+    parser.add_argument(
+        "--classes",
+        type=str,
+        nargs="+",
+        default=None,
+        help="List of class names or class IDs to detect (e.g. 0 2 or person car). Default: person, bike, car."
+    )
     args = parser.parse_args()
 
     input_folder = Path(args.input_dir).resolve()
@@ -294,6 +310,32 @@ def main() -> None:
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
 
+    # Load model to resolve classes
+    model = load_model(args.model)
+
+    classes_of_interest = []
+    if args.classes is not None:
+        # Create a reverse mapping: lowercase_name -> id
+        name_to_id = {v.lower(): k for k, v in model.names.items()}
+        for c in args.classes:
+            if c.isdigit():
+                classes_of_interest.append(int(c))
+            else:
+                c_low = c.lower()
+                if c_low in name_to_id:
+                    classes_of_interest.append(name_to_id[c_low])
+                else:
+                    print(f"Warning: Class name '{c}' not found in model classes. Ignoring.", file=sys.stderr)
+        
+        # Deduplicate
+        classes_of_interest = list(dict.fromkeys(classes_of_interest))
+        
+        if not classes_of_interest:
+            print("Error: No valid classes resolved from the provided --classes argument.", file=sys.stderr)
+            sys.exit(1)
+    else:
+        classes_of_interest = TARGET_CLASSES
+
     print(f"Allocating {thread_count} CPU core(s) to YOLO detections...")
 
     # Recurse over all subdirectories in the input directory
@@ -306,9 +348,13 @@ def main() -> None:
         print("No matching images found in the input directory.")
         return
 
-    # Reset total counts
-    for k in total_counts:
-        total_counts[k] = 0
+    # Reset and initialize total counts for each class of interest
+    with total_counts_lock:
+        total_counts.clear()
+        for cls_id in classes_of_interest:
+            raw_label = model.names.get(cls_id, str(cls_id))
+            normalized_label = map_class(cls_id, raw_label)
+            total_counts[normalized_label] = 0
 
     batch_detect_and_process(
         img_paths=all_images,
@@ -317,15 +363,21 @@ def main() -> None:
         model_name=args.model,
         save_images=not args.no_save,
         num_threads=thread_count,
-        show_progress=True
+        show_progress=True,
+        classes=classes_of_interest
     )
     
     print("\n" + "="*30)
     print("      DETECTION SUMMARY")
     print("="*30)
-    print(f"Total cars:    {total_counts['car']}")
-    print(f"Total people:  {total_counts['person']}")
-    print(f"Total bikes:   {total_counts['bike']}")
+    for label, count in sorted(total_counts.items()):
+        if label == "person":
+            display_label = "people"
+        elif label in ("car", "bike"):
+            display_label = f"{label}s"
+        else:
+            display_label = label
+        print(f"Total {display_label}:".ljust(15) + f"{count}")
     print("="*30)
 
 
