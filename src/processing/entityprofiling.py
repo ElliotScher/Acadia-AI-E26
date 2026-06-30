@@ -515,6 +515,12 @@ def main():
         default=None,
         help="Path to custom fine-tuned PyTorch model checkpoint (.pth)."
     )
+    parser.add_argument(
+        "--categories",
+        type=str,
+        default="car,person",
+        help="Comma-separated list of category suffixes to profile (default: car,person)."
+    )
     args = parser.parse_args()
 
     input_folder = Path(args.input_dir).resolve()
@@ -535,10 +541,12 @@ def main():
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
 
-    # Find images
+    # Find images matching specified categories
+    allowed_categories = [cat.strip().lower() for cat in args.categories.split(",")]
     all_images = [
         p for p in input_folder.rglob("*")
         if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp"]
+        and any(p.stem.lower().endswith(cat) for cat in allowed_categories)
     ]
 
     # Load labels.json zones if present
@@ -634,6 +642,24 @@ def main():
         t.join()
     save_progress.close()
     
+    # Phase 4: Save labels.json to the output folder for compatibility with labeler/viewer
+    print("Saving labels.json to output directory...")
+    output_labels_db = {}
+    if zones:
+        output_labels_db["__zones__"] = zones
+    for img_path, annotations in annotations_dict.items():
+        rel_name = str(img_path.relative_to(input_folder))
+        output_labels_db[rel_name] = [
+            {"box": [int(x) for x in box], "id": int(entity_id)}
+            for box, entity_id in annotations
+        ]
+    try:
+        with open(output_folder / "labels.json", "w") as f:
+            json.dump(output_labels_db, f, indent=2)
+        print("labels.json saved successfully!")
+    except Exception as e:
+        print(f"Error saving labels.json: {e}", file=sys.stderr)
+        
     print(f"Profiling complete. Total unique entities identified: {profile_db.next_id - 1}")
     print(f"Results saved to {output_folder}")
 
