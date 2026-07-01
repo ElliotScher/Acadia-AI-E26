@@ -43,6 +43,7 @@ venv
 # Virtual Environments
 .env/
 .venv/
+.direnv/
 venv/
 env/
 .conan/
@@ -64,3 +65,5 @@ build/
 
 # Database
 *.db
+#.envrc
+.envrc
