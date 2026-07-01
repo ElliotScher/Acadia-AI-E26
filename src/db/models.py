@@ -32,6 +32,7 @@ class Image(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     path: Mapped[str] = mapped_column(String(), unique=True, nullable=False)
     datetime: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    analyzed: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
 
     instances: WriteOnlyMapped["Instance"] = relationship(
         back_populates="image",
@@ -188,3 +189,14 @@ event.listen(
     "after_create",
     trigger2_ddl.execute_if(dialect="sqlite"),
 )
+
+@event.listens_for(Image.metadata, "after_create")
+def add_column_if_not_exists(target, connection, **kwargs):
+    try:
+        connection.execute(DDL("""
+SELECT analyzed FROM image
+"""))
+    except:
+        connection.execute(
+            DDL("ALTER TABLE image ADD COLUMN analyzed BOOLEAN NOT NULL DEFAULT FALSE")
+        )
