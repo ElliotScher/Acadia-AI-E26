@@ -1,8 +1,9 @@
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select
+from sqlalchemy import select, Select
 from sqlalchemy.orm import Session
+from datetime import datetime
 
 from db.models import Image, Instance
 
@@ -11,6 +12,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     session: Session
     images: dict[str, QtGui.QIcon]
     size: int = 0
+    filters: 'Filters'
 
     def __init__(self, session: Session):
         self.session = session
@@ -20,21 +22,22 @@ class GalleryModel(QtCore.QAbstractListModel):
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
-        return self.session.scalar(select(Image).offset(index.row()).limit(1))  # type: ignore
+        return self.session.scalar(self.filters.makeFilter(select(Image)).order_by(Image.datetime).offset(index.row()).limit(1))  # type: ignore
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
     ) -> typing.Any:
         if role == QtCore.Qt.ItemDataRole.DecorationRole:
             data = self.getByIndex(index)
-            if data.path in self.images:
-                return self.images[data.path]
-            else:
-                if len(self.images) > 300:
-                    self.images = dict()
-                img = QtGui.QIcon(data.path)
-                self.images[data.path] = img
-                return img
+            if data:
+                if data.path in self.images:
+                    return self.images[data.path]
+                else:
+                    if len(self.images) > 300:
+                        self.images = dict()
+                    img = QtGui.QIcon(data.path)
+                    self.images[data.path] = img
+                    return img
 
     def rowCount(
         self,
@@ -42,7 +45,6 @@ class GalleryModel(QtCore.QAbstractListModel):
             QtCore.QModelIndex | QtCore.QPersistentModelIndex
         ) = QtCore.QModelIndex(),
     ) -> int:
-        # return self.session.query(Image).count()
         return self.size
 
     def fetchMore(
@@ -51,7 +53,7 @@ class GalleryModel(QtCore.QAbstractListModel):
             QtCore.QModelIndex | QtCore.QPersistentModelIndex
         ) = QtCore.QModelIndex(),
     ):
-        newmax = min(self.size + 300, self.session.query(Image).count())
+        newmax = min(self.size + 300, self.filters.makeFilter(self.session.query(Image)).count())
         self.beginInsertRows(QtCore.QModelIndex(), self.size, newmax - 1)
         self.size = newmax
         self.endInsertRows()
@@ -59,7 +61,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     def canFetchMore(
         self, parent: QtCore.QModelIndex | QtCore.QPersistentModelIndex, /
     ) -> bool:
-        return self.size < self.session.query(Image).count()
+        return self.size < self.filters.makeFilter(self.session.query(Image)).count()
 
 
 class ImageTab(QtWidgets.QWidget):
@@ -68,8 +70,16 @@ class ImageTab(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         layout = QtWidgets.QHBoxLayout(self)
+
+        gallerySide = QtWidgets.QWidget()
+        gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
+
+        self.filters = Filters()
+        gallerySideLayout.addWidget(self.filters)
         self.gallery = ImageGallery()
-        layout.addWidget(self.gallery)
+        gallerySideLayout.addWidget(self.gallery)
+
+        layout.addWidget(gallerySide)
         self.imageInfo = ImageInfo()
         layout.addWidget(self.imageInfo)
 
@@ -84,10 +94,60 @@ class ImageTab(QtWidgets.QWidget):
     def setsession(self, session: Session):
         self.session = session
 
-        self.galleryModel = GalleryModel(session)
+        self.refreshGallery()
+
+        minDt = datetime_to_qdatetime(Image.get_earliest_image(session).datetime)
+        maxDt = datetime_to_qdatetime(Image.get_latest_image(session).datetime)
+        self.filters.startDate.setDateTimeRange(minDt, maxDt)
+        self.filters.endDate.setDateTimeRange(minDt, maxDt)
+        self.filters.startDate.setDateTime(minDt)
+        self.filters.endDate.setDateTime(maxDt)
+
+    @QtCore.Slot()
+    def refreshGallery(self):
+        if not hasattr(self, "session"):
+            return
+        self.galleryModel = GalleryModel(self.session)
+        self.galleryModel.filters = self.filters
         self.gallery.setModel(self.galleryModel)
         self.gallery.selectionModel().selectionChanged.connect(self.newselection)
 
+
+class Filters(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        filterLayout = QtWidgets.QHBoxLayout(self)
+
+        self.startDate = QtWidgets.QDateTimeEdit()
+        self.startDate.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
+        self.startDate.setCalendarPopup(True)
+        self.startDate.dateTimeChanged.connect(self.refreshGallery)
+        filterLayout.addWidget(self.startDate)
+
+        filterLayout.addWidget(QtWidgets.QLabel("to"))
+
+        self.endDate = QtWidgets.QDateTimeEdit()
+        self.endDate.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
+        self.endDate.setCalendarPopup(True)
+        self.endDate.dateTimeChanged.connect(self.refreshGallery)
+        filterLayout.addWidget(self.endDate)
+
+        self.analyzedFilter = QtWidgets.QComboBox()
+        self.analyzedFilter.addItems(["All", "Only Analyzed", "Only Unanalyzed"])
+        self.analyzedFilter.currentIndexChanged.connect(self.refreshGallery)
+        filterLayout.addWidget(self.analyzedFilter)
+    
+    def makeFilter(self, select: Select) -> Select:
+        filters = select.where(Image.datetime >= self.startDate.dateTime().toPython()).where(Image.datetime <= self.endDate.dateTime().toPython())
+        if self.analyzedFilter.currentIndex() == 1:
+            filters = filters.where(Image.analyzed == True)
+        elif self.analyzedFilter.currentIndex() == 2:
+            filters = filters.where(Image.analyzed == False)
+        return filters
+
+    @QtCore.Slot()
+    def refreshGallery (self):
+        self.parentWidget().parentWidget().refreshGallery()
 
 class ImageGallery(QtWidgets.QListView):
     def __init__(self):
@@ -202,3 +262,7 @@ class ImageViewer(QtWidgets.QGraphicsView):
         pen = QtGui.QPen(color)
         pen.setWidth(10)
         return pen
+
+
+def datetime_to_qdatetime(dt: datetime):
+    return QtCore.QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, 0)

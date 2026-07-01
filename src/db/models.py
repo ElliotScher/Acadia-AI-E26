@@ -70,6 +70,16 @@ class Image(Base):
                 session.add(image)
         session.commit()
 
+    @staticmethod
+    def get_earliest_image(session: Session) -> "Image":
+        return session.scalars(select(Image).order_by(Image.datetime).limit(1)).one()
+
+    @staticmethod
+    def get_latest_image(session: Session) -> "Image":
+        return session.scalars(
+            select(Image).order_by(desc(Image.datetime)).limit(1)
+        ).one()
+
     def __repr__(self) -> str:
         return f"Image({self.id})"
 
@@ -189,6 +199,7 @@ event.listen(
     "after_create",
     trigger2_ddl.execute_if(dialect="sqlite"),
 )
+
 
 @event.listens_for(Image.metadata, "after_create")
 def add_column_if_not_exists(target, connection, **kwargs):
