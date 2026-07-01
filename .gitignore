@@ -43,6 +43,7 @@ venv
 # Virtual Environments
 .env/
 .venv/
+.direnv/
 venv/
 env/
 .conan/
@@ -61,3 +62,6 @@ build/
 
 # YOLO Models
 *.pt
+
+#.envrc
+.envrc
