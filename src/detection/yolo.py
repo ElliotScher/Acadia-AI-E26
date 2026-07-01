@@ -17,7 +17,13 @@ total_counts = {}
 total_counts_lock = threading.Lock()
 
 
-def process_images(img_paths: List[Path], input_folder: Path, output_folder: Path, model_name: str, progress_bar: tqdm):
+def process_images(
+    img_paths: List[Path],
+    input_folder: Path,
+    output_folder: Path,
+    model_name: str,
+    progress_bar: tqdm,
+):
     thread_model = YOLO(model_name)
 
     for img_path in img_paths:
@@ -26,10 +32,7 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
             continue
 
         results = thread_model.predict(
-            source=str(img_path),
-            conf=0.25,
-            classes=TARGET_CLASSES,
-            verbose=False
+            source=str(img_path), conf=0.25, classes=TARGET_CLASSES, verbose=False
         )
 
         image = cv2.imread(str(img_path))
@@ -38,7 +41,7 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
             for box in r.boxes:
                 cls = int(box.cls[0])
                 label = thread_model.names[cls]
-                
+
                 with total_counts_lock:
                     total_counts[label] += 1
 
@@ -47,13 +50,13 @@ def process_images(img_paths: List[Path], input_folder: Path, output_folder: Pat
 
                 cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), thickness=25)
                 cv2.putText(
-                    image, 
-                    f"{label} {conf:.2f}", 
-                    (x1, y1 - 8), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    image,
+                    f"{label} {conf:.2f}",
+                    (x1, y1 - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX,
                     5,
-                    (0, 255, 0), 
-                    5
+                    (0, 255, 0),
+                    5,
                 )
 
         # Save result, preserving directory structure
@@ -67,27 +70,21 @@ def main():
     parser = argparse.ArgumentParser(
         description="Process images in an input directory using YOLO and save results to an output directory."
     )
+    parser.add_argument("input_dir", type=str, help="Path to the input directory.")
+    parser.add_argument("output_dir", type=str, help="Path to the output directory.")
     parser.add_argument(
-        "input_dir",
-        type=str,
-        help="Path to the input directory."
-    )
-    parser.add_argument(
-        "output_dir",
-        type=str,
-        help="Path to the output directory."
-    )
-    parser.add_argument(
-        "-m", "--model",
+        "-m",
+        "--model",
         type=str,
         default="yolo26s.pt",
-        help="YOLO model weights to use (default: yolo26s.pt)."
+        help="YOLO model weights to use (default: yolo26s.pt).",
     )
     parser.add_argument(
-        "-c", "--cores",
+        "-c",
+        "--cores",
         type=int,
         default=None,
-        help="Number of CPU cores to allocate to YOLO detections (default: use all available cores)."
+        help="Number of CPU cores to allocate to YOLO detections (default: use all available cores).",
     )
     args = parser.parse_args()
 
@@ -95,7 +92,10 @@ def main():
     output_folder = Path(args.output_dir).resolve()
 
     if not input_folder.is_dir():
-        print(f"Error: Input directory '{input_folder}' does not exist or is not a directory.", file=sys.stderr)
+        print(
+            f"Error: Input directory '{input_folder}' does not exist or is not a directory.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -104,7 +104,10 @@ def main():
     max_cores = os.cpu_count() or 4
     if args.cores is not None:
         if args.cores <= 0:
-            print("Error: The number of allocated CPU cores must be at least 1.", file=sys.stderr)
+            print(
+                "Error: The number of allocated CPU cores must be at least 1.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         thread_count = args.cores
     else:
@@ -127,7 +130,8 @@ def main():
 
     # Recurse over all subdirectories in the input directory
     all_images = [
-        p for p in input_folder.rglob("*")
+        p
+        for p in input_folder.rglob("*")
         if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp"]
     ]
 
@@ -148,18 +152,17 @@ def main():
             continue
         thread = threading.Thread(
             target=process_images,
-            args=(imgs, input_folder, output_folder, args.model, progress_bar)
+            args=(imgs, input_folder, output_folder, args.model, progress_bar),
         )
         threads.append(thread)
         thread.start()
 
     for t in threads:
         t.join()
-        
+
     progress_bar.close()
     print("YIPPEEKIYAY MOTHERFUCKER")
 
 
 if __name__ == "__main__":
     main()
-

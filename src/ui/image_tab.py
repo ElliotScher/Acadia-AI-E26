@@ -38,16 +38,18 @@ class GalleryModel(QtCore.QAbstractListModel):
 
     def rowCount(
         self,
-        parent: QtCore.QModelIndex
-        | QtCore.QPersistentModelIndex = QtCore.QModelIndex(),
+        parent: (
+            QtCore.QModelIndex | QtCore.QPersistentModelIndex
+        ) = QtCore.QModelIndex(),
     ) -> int:
         # return self.session.query(Image).count()
         return self.size
 
     def fetchMore(
         self,
-        parent: QtCore.QModelIndex
-        | QtCore.QPersistentModelIndex = QtCore.QModelIndex(),
+        parent: (
+            QtCore.QModelIndex | QtCore.QPersistentModelIndex
+        ) = QtCore.QModelIndex(),
     ):
         newmax = min(self.size + 300, self.session.query(Image).count())
         self.beginInsertRows(QtCore.QModelIndex(), self.size, newmax - 1)
@@ -164,6 +166,7 @@ class ImageInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.imgdate)
         return widget
 
+
 class ImageViewer(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -181,13 +184,19 @@ class ImageViewer(QtWidgets.QGraphicsView):
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
         for instance in image.get_instances(session):
-            self.scene.addRect(instance.x, instance.y, instance.width, instance.height, self.getpen("green"))
+            self.scene.addRect(
+                instance.x,
+                instance.y,
+                instance.width,
+                instance.height,
+                self.getpen("green"),
+            )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self.pixmapItem:
             self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
-    
+
     @staticmethod
     def getpen(color: str) -> QtGui.QPen:
         pen = QtGui.QPen(color)

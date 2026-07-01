@@ -9,6 +9,7 @@ from db.models import Image
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -244,4 +245,3 @@ if __name__ == "__main__":
     widget.show()
 
     sys.exit(app.exec())
-

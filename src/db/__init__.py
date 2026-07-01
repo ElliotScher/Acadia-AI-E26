@@ -3,11 +3,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from db.models import Base
 
+
 # use None to get an in-memory database
-def get_db (path: str | None) -> Engine:
+def get_db(path: str | None) -> Engine:
     engine = create_engine(("sqlite:///" + path) if path else "sqlite:///")
     Base.metadata.create_all(engine)
     return engine
+
 
 # required to actually enforce foreign key constraints in SQLite
 @event.listens_for(Engine, "connect")
