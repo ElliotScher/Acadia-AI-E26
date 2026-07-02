@@ -3,7 +3,7 @@ import typing
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select, Select, func
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, time
 
 from detection.yolo import load_model, CLASS_ID_MAPPING
 from db.models import Image, Instance
@@ -225,7 +225,8 @@ class Filters(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def refreshGallery(self):
-        self.parentWidget().parentWidget().refreshGallery()
+        if self.parentWidget() and self.parentWidget().parentWidget():
+            self.parentWidget().parentWidget().refreshGallery()
 
 
 class ImageGallery(QtWidgets.QListView):
@@ -363,3 +364,9 @@ class ImageViewer(QtWidgets.QGraphicsView):
 
 def datetime_to_qdatetime(dt: datetime):
     return QtCore.QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, 0)
+
+def datetime_to_qdate(dt: datetime):
+    return QtCore.QDate(dt.year, dt.month, dt.day)
+
+def time_to_qtime(t: time):
+    return QtCore.QTime(t.hour, t.minute, t.second, 0)

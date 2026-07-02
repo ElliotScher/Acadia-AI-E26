@@ -6,6 +6,7 @@ from sqlalchemy import (
     Integer,
     Boolean,
     ForeignKey,
+    Time,
     DDL,
     select,
     desc,
@@ -20,7 +21,7 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import os
 from pathlib import Path
 
@@ -37,6 +38,7 @@ class Image(Base):
     path: Mapped[str] = mapped_column(String(), unique=True, nullable=False)
     datetime: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
     analyzed: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    time: Mapped[time] = mapped_column(Time(), nullable=False)
 
     instances: WriteOnlyMapped["Instance"] = relationship(
         back_populates="image",
@@ -44,6 +46,11 @@ class Image(Base):
         single_parent=True,
         passive_deletes=True,
     )
+
+    def __init__(self, **kwargs):
+        super(Image, self).__init__(**kwargs)
+        if self.time is None:
+            self.time = time(self.datetime.hour, self.datetime.minute, self.datetime.second)
 
     def get_instances(self, session: Session) -> list["Instance"]:
         return session.scalars(self.instances.select()).all()
@@ -251,6 +258,13 @@ SELECT analyzed FROM image LIMIT 1
         connection.execute(
             DDL("ALTER TABLE image ADD COLUMN analyzed BOOLEAN NOT NULL DEFAULT FALSE")
         )
+    
+    try:
+        connection.execute(DDL("""
+SELECT time FROM image LIMIT 1
+"""))
+    except:
+        raise AssertionError("Database is missing image time column. Delete database and rerun.")
 
 
 @event.listens_for(Instance.metadata, "after_create")
