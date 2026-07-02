@@ -34,31 +34,94 @@ def test_session():
     entity5 = Entity(cluster=3)
 
     instance1 = Instance(
-        image=image1, entity=entity1, type_id=0, x=0, y=0, width=0, height=0
+        image=image1,
+        entity=entity1,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance2 = Instance(
-        image=image1, entity=entity2, type_id=0, x=0, y=0, width=0, height=0
+        image=image1,
+        entity=entity2,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance3 = Instance(
-        image=image2, entity=entity1, type_id=0, x=0, y=0, width=0, height=0
+        image=image2,
+        entity=entity1,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance4 = Instance(
-        image=image2, entity=entity2, type_id=0, x=0, y=0, width=0, height=0
+        image=image2,
+        entity=entity2,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance5 = Instance(
-        image=image3, entity=entity3, type_id=1, x=0, y=0, width=0, height=0
+        image=image3,
+        entity=entity3,
+        type_id=1,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance6 = Instance(
-        image=image3, entity=entity4, type_id=1, x=0, y=0, width=0, height=0
+        image=image3,
+        entity=entity4,
+        type_id=1,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance7 = Instance(
-        image=image4, entity=entity5, type_id=0, x=0, y=0, width=0, height=0
+        image=image4,
+        entity=entity5,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance8 = Instance(
-        image=image4, entity=entity3, type_id=1, x=0, y=0, width=0, height=0
+        image=image4,
+        entity=entity3,
+        type_id=1,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
     instance9 = Instance(
-        image=image4, entity=entity4, type_id=1, x=0, y=0, width=0, height=0
+        image=image4,
+        entity=entity4,
+        type_id=1,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
 
     # add testing data
@@ -93,6 +156,15 @@ def test_image(test_session: Session):
     assert len(entities) == 2
     assert entities[0].id == entity1.id
     assert entities[1].id == entity2.id
+
+    assert Image.get_earliest_image(test_session).id == image1.id
+    assert Image.get_latest_image(test_session).id == image4.id
+    test_session.delete(image1)
+    test_session.delete(image2)
+    test_session.delete(image3)
+    test_session.delete(image4)
+    assert Image.get_earliest_image(test_session) is None
+    assert Image.get_latest_image(test_session) is None
 
 
 def test_entity(test_session: Session):
@@ -193,7 +265,14 @@ def test_create(test_session: Session):
 
     entity6 = Entity()
     instance10 = Instance(
-        image=image5, entity=entity6, type_id=0, x=0, y=0, width=0, height=0
+        image=image5,
+        entity=entity6,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
 
     test_session.add_all((entity6, instance10))
@@ -213,7 +292,14 @@ def test_transfer_entity(test_session: Session):
     )
     entity6 = Entity()
     instance10 = Instance(
-        image=image5, entity=entity6, type_id=0, x=0, y=0, width=0, height=0
+        image=image5,
+        entity=entity6,
+        type_id=0,
+        x=0,
+        y=0,
+        width=0,
+        height=0,
+        confidence=1,
     )
 
     test_session.add_all((image5, entity6, instance10))

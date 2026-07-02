@@ -41,7 +41,11 @@ class Root(QtWidgets.QMainWindow):
         mFile.addAction(aExport)
 
         mAnalyze = self.menuBar().addMenu("Analyze")
+        aAnalyzeFiltered = QtGui.QAction("Analyze Filtered", self)
+        aAnalyzeFiltered.triggered.connect(self.analyzeFiltered)
+        mAnalyze.addAction(aAnalyzeFiltered)
         aAnalyzeSelection = QtGui.QAction("Analyze Selection", self)
+        aAnalyzeSelection.triggered.connect(self.analyzeSelection)
         mAnalyze.addAction(aAnalyzeSelection)
 
         mSelect = self.menuBar().addMenu("Select")
@@ -80,6 +84,16 @@ class Root(QtWidgets.QMainWindow):
     def selectInverse(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.gallery.invertSelection()
+
+    @QtCore.Slot()
+    def analyzeFiltered(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyze(True)
+
+    @QtCore.Slot()
+    def analyzeSelection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyze(False)
 
 
 # class SetupTab(QtWidgets.QWidget):

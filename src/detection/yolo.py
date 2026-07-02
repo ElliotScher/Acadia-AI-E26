@@ -20,7 +20,7 @@ CLASS_MAPPING: Dict[str, str] = {
     "motorcycle": "bike",
     "car": "car",
     "bus": "car",
-    "truck": "car"
+    "truck": "car",
 }
 
 CLASS_ID_MAPPING: Dict[int, str] = {
@@ -29,7 +29,7 @@ CLASS_ID_MAPPING: Dict[int, str] = {
     3: "bike",
     2: "car",
     5: "car",
-    7: "car"
+    7: "car",
 }
 
 # Global object counter for CLI summaries and tracking
@@ -43,10 +43,12 @@ class Detection:
     Struct representing a detected object.
     Holds the image coordinates of the bounding box, the category/label, the associated image path, and detection confidence.
     """
+
     box: Tuple[int, int, int, int]  # (x1, y1, x2, y2) in image coordinates
-    label: str                      # Target category ('car', 'person', or 'bike')
-    image_path: Path                # Path to the associated image
-    conf: float = 0.0          # Confidence score
+    label: str  # Target category ('car', 'person', or 'bike')
+    image_path: Path  # Path to the associated image
+    cls_id: int  # COCO class
+    conf: float = 0.0  # Confidence score
 
 
 def load_model(model_name: str) -> YOLO:
@@ -60,16 +62,13 @@ def detect_objects(
     model: YOLO,
     img_path: Union[Path, str],
     conf: float = 0.25,
-    classes: List[int] = TARGET_CLASSES
+    classes: List[int] = TARGET_CLASSES,
 ) -> List[Any]:
     """
     Runs YOLO model prediction and returns raw results.
     """
     results = model.predict(
-        source=str(img_path),
-        conf=conf,
-        classes=classes,
-        verbose=False
+        source=str(img_path), conf=conf, classes=classes, verbose=False
     )
     return results
 
@@ -82,7 +81,7 @@ def map_class(cls_id: int, cls_name: str) -> str:
     # 1. Try mapping by class ID first
     if cls_id in CLASS_ID_MAPPING:
         return CLASS_ID_MAPPING[cls_id]
-    
+
     # 2. Fall back to mapping by label name (case-insensitive)
     name_lower = cls_name.lower()
     if name_lower in CLASS_MAPPING:
@@ -96,7 +95,9 @@ def map_class(cls_id: int, cls_name: str) -> str:
     return cls_name
 
 
-def parse_detections(results: List[Any], model_names: Dict[int, str], img_path: Path) -> List[Detection]:
+def parse_detections(
+    results: List[Any], model_names: Dict[int, str], img_path: Path
+) -> List[Detection]:
     """
     Parses raw YOLO results into a normalized list of Detection objects.
     """
@@ -106,24 +107,24 @@ def parse_detections(results: List[Any], model_names: Dict[int, str], img_path: 
             cls_id = int(box.cls[0])
             raw_label = model_names.get(cls_id, "")
             normalized_label = map_class(cls_id, raw_label)
-            
+
             if normalized_label:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
-                detections.append(Detection(
-                    box=(x1, y1, x2, y2),
-                    label=normalized_label,
-                    image_path=img_path,
-                    conf=conf
-                ))
+                detections.append(
+                    Detection(
+                        box=(x1, y1, x2, y2),
+                        label=normalized_label,
+                        image_path=img_path,
+                        conf=conf,
+                        cls_id=cls_id,
+                    )
+                )
     return detections
 
 
 def save_annotated_results(
-    img_path: Path,
-    detections: List[Detection],
-    input_folder: Path,
-    output_folder: Path
+    img_path: Path, detections: List[Detection], input_folder: Path, output_folder: Path
 ) -> None:
     """
     Saves the annotated copies of the image (or the original if no detections)
@@ -144,8 +145,10 @@ def save_annotated_results(
             label = det.label
             image_copy = image.copy()
             cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 0), thickness=5)
-            
-            out_path = out_path_base.with_name(f"{out_path_base.stem}-{i}-{label}{out_path_base.suffix}")
+
+            out_path = out_path_base.with_name(
+                f"{out_path_base.stem}-{i}-{label}{out_path_base.suffix}"
+            )
             cv2.imwrite(str(out_path), image_copy)
 
 
@@ -156,17 +159,17 @@ def process_single_image(
     output_folder: Path,
     save_images: bool = True,
     conf: float = 0.25,
-    classes: List[int] = TARGET_CLASSES
+    classes: List[int] = TARGET_CLASSES,
 ) -> List[Detection]:
     """
     Processes a single image: runs detection, parses results, and optionally saves output.
     """
     raw_results = detect_objects(model, img_path, conf, classes)
     detections = parse_detections(raw_results, model.names, img_path)
-    
+
     if save_images:
         save_annotated_results(img_path, detections, input_folder, output_folder)
-        
+
     return detections
 
 
@@ -178,13 +181,13 @@ def process_image_worker(
     save_images: bool,
     conf: float,
     progress_bar: tqdm | None,
-    classes: List[int] = TARGET_CLASSES
+    classes: List[int] = TARGET_CLASSES,
 ) -> None:
     """
     Worker function executed by threads in batch mode.
     """
     model = load_model(model_name)
-    
+
     for img_path in img_paths:
         if img_path.suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp"]:
             if progress_bar:
@@ -198,7 +201,7 @@ def process_image_worker(
             output_folder=output_folder,
             save_images=save_images,
             conf=conf,
-            classes=classes
+            classes=classes,
         )
 
         # Update global counts
@@ -220,15 +223,17 @@ def batch_detect_and_process(
     conf: float = 0.25,
     num_threads: int = 1,
     show_progress: bool = True,
-    classes: List[int] = TARGET_CLASSES
+    classes: List[int] = TARGET_CLASSES,
 ) -> None:
     """
     Performs multi-threaded batch detection and processing on a list of images.
     """
     progress_bar = None
     if show_progress:
-        progress_bar = tqdm(total=len(img_paths), desc="Processing Detections", unit="image")
-        
+        progress_bar = tqdm(
+            total=len(img_paths), desc="Processing Detections", unit="image"
+        )
+
     chunk_size = max(1, len(img_paths) // num_threads)
     threads: List[Thread] = []
 
@@ -240,14 +245,23 @@ def batch_detect_and_process(
             continue
         thread = threading.Thread(
             target=process_image_worker,
-            args=(imgs, input_folder, output_folder, model_name, save_images, conf, progress_bar, classes)
+            args=(
+                imgs,
+                input_folder,
+                output_folder,
+                model_name,
+                save_images,
+                conf,
+                progress_bar,
+                classes,
+            ),
         )
         threads.append(thread)
         thread.start()
 
     for t in threads:
         t.join()
-        
+
     if progress_bar:
         progress_bar.close()
 
@@ -256,39 +270,33 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Process images in an input directory using YOLO and save results to an output directory."
     )
+    parser.add_argument("input_dir", type=str, help="Path to the input directory.")
+    parser.add_argument("output_dir", type=str, help="Path to the output directory.")
     parser.add_argument(
-        "input_dir",
-        type=str,
-        help="Path to the input directory."
-    )
-    parser.add_argument(
-        "output_dir",
-        type=str,
-        help="Path to the output directory."
-    )
-    parser.add_argument(
-        "-m", "--model",
+        "-m",
+        "--model",
         type=str,
         default="yolo26s.pt",
-        help="YOLO model weights to use (default: yolo26s.pt)."
+        help="YOLO model weights to use (default: yolo26s.pt).",
     )
     parser.add_argument(
-        "-c", "--cores",
+        "-c",
+        "--cores",
         type=int,
         default=1,
-        help="Number of CPU cores to allocate to YOLO detections (default: 1)."
+        help="Number of CPU cores to allocate to YOLO detections (default: 1).",
     )
     parser.add_argument(
         "--no-save",
         action="store_true",
-        help="Do not save annotated images to the output directory."
+        help="Do not save annotated images to the output directory.",
     )
     parser.add_argument(
         "--classes",
         type=str,
         nargs="+",
         default=None,
-        help="List of class names or class IDs to detect (e.g. 0 2 or person car). Default: person, bike, car."
+        help="List of class names or class IDs to detect (e.g. 0 2 or person car). Default: person, bike, car.",
     )
     args = parser.parse_args()
 
@@ -296,13 +304,19 @@ def main() -> None:
     output_folder = Path(args.output_dir).resolve()
 
     if not input_folder.is_dir():
-        print(f"Error: Input directory '{input_folder}' does not exist or is not a directory.", file=sys.stderr)
+        print(
+            f"Error: Input directory '{input_folder}' does not exist or is not a directory.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
     if args.cores <= 0:
-        print("Error: The number of allocated CPU cores must be at least 1.", file=sys.stderr)
+        print(
+            "Error: The number of allocated CPU cores must be at least 1.",
+            file=sys.stderr,
+        )
         sys.exit(1)
     thread_count = args.cores
 
@@ -325,13 +339,19 @@ def main() -> None:
                 if c_low in name_to_id:
                     classes_of_interest.append(name_to_id[c_low])
                 else:
-                    print(f"Warning: Class name '{c}' not found in model classes. Ignoring.", file=sys.stderr)
-        
+                    print(
+                        f"Warning: Class name '{c}' not found in model classes. Ignoring.",
+                        file=sys.stderr,
+                    )
+
         # Deduplicate
         classes_of_interest = list(dict.fromkeys(classes_of_interest))
-        
+
         if not classes_of_interest:
-            print("Error: No valid classes resolved from the provided --classes argument.", file=sys.stderr)
+            print(
+                "Error: No valid classes resolved from the provided --classes argument.",
+                file=sys.stderr,
+            )
             sys.exit(1)
     else:
         classes_of_interest = TARGET_CLASSES
@@ -340,7 +360,8 @@ def main() -> None:
 
     # Recurse over all subdirectories in the input directory
     all_images = [
-        p for p in input_folder.rglob("*")
+        p
+        for p in input_folder.rglob("*")
         if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp"]
     ]
 
@@ -364,12 +385,12 @@ def main() -> None:
         save_images=not args.no_save,
         num_threads=thread_count,
         show_progress=True,
-        classes=classes_of_interest
+        classes=classes_of_interest,
     )
-    
-    print("\n" + "="*30)
+
+    print("\n" + "=" * 30)
     print("      DETECTION SUMMARY")
-    print("="*30)
+    print("=" * 30)
     for label, count in sorted(total_counts.items()):
         if label == "person":
             display_label = "people"
@@ -378,7 +399,7 @@ def main() -> None:
         else:
             display_label = label
         print(f"Total {display_label}:".ljust(15) + f"{count}")
-    print("="*30)
+    print("=" * 30)
 
 
 if __name__ == "__main__":

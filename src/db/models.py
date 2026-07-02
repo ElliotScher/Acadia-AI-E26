@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sqlalchemy import (
     String,
     DateTime,
@@ -21,6 +22,9 @@ from sqlalchemy.orm import (
 )
 from datetime import datetime, timedelta
 import os
+from pathlib import Path
+
+from detection.yolo import process_single_image
 
 
 class Base(DeclarativeBase):
@@ -49,6 +53,33 @@ class Image(Base):
             select(Entity).join(Instance).where(Instance.image_id == self.id)
         ).all()
 
+    def analyze(self, session: Session, model):
+        if self.analyzed:
+            for instance in self.get_instances(session):
+                session.delete(instance)
+
+        detections = process_single_image(
+            model, Path(self.path).resolve(), Path(), Path(), False
+        )
+
+        for detection in detections:
+            entity = Entity()
+            instance = Instance(
+                image=self,
+                entity=entity,
+                x=detection.box[0],
+                y=detection.box[1],
+                width=detection.box[2] - detection.box[0],
+                height=detection.box[3] - detection.box[1],
+                type_id=detection.cls_id,
+                confidence=detection.conf,
+            )
+            session.add_all((entity, instance))
+
+        self.analyzed = True
+        session.add(self)
+        session.commit()
+
     @staticmethod
     def import_from_dir(session: Session, dir: str):
         for root, _, files in os.walk(dir):
@@ -71,14 +102,22 @@ class Image(Base):
         session.commit()
 
     @staticmethod
-    def get_earliest_image(session: Session) -> "Image":
-        return session.scalars(select(Image).order_by(Image.datetime).limit(1)).one()
+    def get_earliest_image(session: Session) -> Image | None:
+        try:
+            return session.scalars(
+                select(Image).order_by(Image.datetime).limit(1)
+            ).one()
+        except:
+            return None
 
     @staticmethod
-    def get_latest_image(session: Session) -> "Image":
-        return session.scalars(
-            select(Image).order_by(desc(Image.datetime)).limit(1)
-        ).one()
+    def get_latest_image(session: Session) -> Image | None:
+        try:
+            return session.scalars(
+                select(Image).order_by(desc(Image.datetime)).limit(1)
+            ).one()
+        except:
+            return None
 
     def __repr__(self) -> str:
         return f"Image({self.id})"
@@ -157,6 +196,7 @@ class Instance(Base):
     y: Mapped[int] = mapped_column(Integer(), nullable=False)
     width: Mapped[int] = mapped_column(Integer(), nullable=False)
     height: Mapped[int] = mapped_column(Integer(), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float(), nullable=False)
 
     image: Mapped[Image] = relationship(back_populates="instances")
     entity: Mapped[Entity] = relationship(back_populates="instances")
@@ -205,9 +245,19 @@ event.listen(
 def add_column_if_not_exists(target, connection, **kwargs):
     try:
         connection.execute(DDL("""
-SELECT analyzed FROM image
+SELECT analyzed FROM image LIMIT 1
 """))
     except:
         connection.execute(
             DDL("ALTER TABLE image ADD COLUMN analyzed BOOLEAN NOT NULL DEFAULT FALSE")
         )
+
+
+@event.listens_for(Instance.metadata, "after_create")
+def add_column_if_not_exists(target, connection, **kwargs):
+    try:
+        connection.execute(DDL("""
+SELECT confidence FROM instance LIMIT 1
+"""))
+    except:
+        connection.execute(DDL("ALTER TABLE instance ADD COLUMN confidence FLOAT"))
