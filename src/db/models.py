@@ -60,13 +60,13 @@ class Image(Base):
             select(Entity).join(Instance).where(Instance.image_id == self.id)
         ).all()
 
-    def analyze(self, session: Session, model):
+    def analyze(self, session: Session, model, conf, classes):
         if self.analyzed:
             for instance in self.get_instances(session):
                 session.delete(instance)
 
         detections = process_single_image(
-            model, Path(self.path).resolve(), Path(), Path(), False
+            model, Path(self.path).resolve(), Path(), Path(), False, conf, classes
         )
 
         for detection in detections:

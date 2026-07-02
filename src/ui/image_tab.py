@@ -7,6 +7,7 @@ from datetime import datetime, time
 
 from detection.yolo import load_model, CLASS_ID_MAPPING
 from db.models import Image, Instance
+from analyze_dialog import AnalyzeDialog
 
 
 class GalleryModel(QtCore.QAbstractListModel):
@@ -120,6 +121,20 @@ class ImageTab(QtWidgets.QWidget):
         count = self.filters.makeFilter(self.session.query(Image)).count()
         self.count.setText(str(count) + " images")
 
+        types = self.session.scalars(select(Instance.type_id).distinct()).unique().all()
+        self.filters.typeFilter.currentIndexChanged.connect(self.refreshGallery)
+        self.filters.typeFilter.currentIndexChanged.disconnect(self.refreshGallery)
+        selectedTypeFilter = self.filters.typeFilter.currentText()
+        self.filters.typeFilter.clear()
+        self.filters.typeFilter.addItems(["All"])
+        self.filters.typeFilterMap = dict()
+        for type_id in types:
+            self.filters.typeFilter.addItems([CLASS_ID_MAPPING[type_id].title()])
+            self.filters.typeFilterMap[CLASS_ID_MAPPING[type_id].title()] = type_id
+        if selectedTypeFilter in self.filters.typeFilterMap:
+            self.filters.typeFilter.setCurrentText(selectedTypeFilter)
+        self.filters.typeFilter.currentIndexChanged.connect(self.refreshGallery)
+
     @QtCore.Slot()
     def analyze(self, filtered: bool):
         if not hasattr(self, "session"):
@@ -136,10 +151,9 @@ class ImageTab(QtWidgets.QWidget):
                 map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
             )
 
-        for image in images:
-            image.analyze(self.session, self.yoloModel)
-
-        self.refreshGallery()
+        dialog = AnalyzeDialog(self.session, self.yoloModel, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
 
 
 class Filters(QtWidgets.QWidget):
@@ -182,14 +196,9 @@ class Filters(QtWidgets.QWidget):
         filterLayout.addWidget(self.maxFilter)
 
         self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilter.currentIndexChanged.connect(self.refreshGallery)
         self.typeFilterMap = dict()
-        typeFilterOptions = ["All"]
-        for type_id in CLASS_ID_MAPPING:
-            if not CLASS_ID_MAPPING[type_id] in typeFilterOptions:
-                typeFilterOptions.append(CLASS_ID_MAPPING[type_id])
-                self.typeFilterMap[CLASS_ID_MAPPING[type_id]] = type_id
-        self.typeFilter.addItems(typeFilterOptions)
+        self.typeFilter.addItems(["All"])
+        self.typeFilter.setMinimumWidth(100)
         filterLayout.addWidget(self.typeFilter)
 
     def makeFilter(self, select: Select) -> Select:
@@ -207,18 +216,18 @@ class Filters(QtWidgets.QWidget):
             or self.minFilter.value() > 0
             or self.maxFilter.value() < self.maxFilter.maximum()
         ):
-            filters = filters.join(Image.instances).group_by(Image.id)
+            filters = filters.join(Image.instances)
             if self.typeFilter.currentIndex() != 0:
-                filters = filters.having(
+                filters = filters.where(
                     Instance.type_id
                     == self.typeFilterMap[self.typeFilter.currentText()]
                 )
             if self.minFilter.value() > 0:
-                filters = filters.having(
+                filters = filters.group_by(Image.id).having(
                     func.count(Instance.entity_id) >= self.minFilter.value()
                 )
             if self.maxFilter.value() < self.maxFilter.maximum():
-                filters = filters.having(
+                filters = filters.group_by(Image.id).having(
                     func.count(Instance.entity_id) <= self.maxFilter.value()
                 )
         return filters
@@ -290,7 +299,7 @@ class ImageInfo(QtWidgets.QGroupBox):
         instancesText = ""
         for instance in instances:
             instancesText += (
-                CLASS_ID_MAPPING[instance.type_id]
+                CLASS_ID_MAPPING[instance.type_id].title()
                 + " "
                 + str(round(instance.confidence * 10000) / 100)
                 + "% confidence\n"
