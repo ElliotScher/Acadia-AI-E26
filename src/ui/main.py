@@ -68,7 +68,6 @@ class Root(QtWidgets.QMainWindow):
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
         self.imageTab.setsession(self.session)
-        # self.imageTab.gallery.addImages(images)
 
     @QtCore.Slot()
     def selectAll(self):
@@ -255,7 +254,7 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication([])
 
     widget = Root()
-    widget.resize(800, 600)
+    widget.resize(960, 600)
     widget.show()
 
     sys.exit(app.exec())

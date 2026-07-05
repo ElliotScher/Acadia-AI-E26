@@ -50,7 +50,9 @@ class Image(Base):
     def __init__(self, **kwargs):
         super(Image, self).__init__(**kwargs)
         if self.time is None:
-            self.time = time(self.datetime.hour, self.datetime.minute, self.datetime.second)
+            self.time = time(
+                self.datetime.hour, self.datetime.minute, self.datetime.second
+            )
 
     def get_instances(self, session: Session) -> list["Instance"]:
         return session.scalars(self.instances.select()).all()
@@ -258,13 +260,15 @@ SELECT analyzed FROM image LIMIT 1
         connection.execute(
             DDL("ALTER TABLE image ADD COLUMN analyzed BOOLEAN NOT NULL DEFAULT FALSE")
         )
-    
+
     try:
         connection.execute(DDL("""
 SELECT time FROM image LIMIT 1
 """))
     except:
-        raise AssertionError("Database is missing image time column. Delete database and rerun.")
+        raise AssertionError(
+            "Database is missing image time column. Delete database and rerun."
+        )
 
 
 @event.listens_for(Instance.metadata, "after_create")
