@@ -138,14 +138,14 @@ def test_track_entities_in_directory_max_gap():
 
     # Detections of similar object but separated by large timestamp (gap > 10.0)
     results_dict = {
-        Path("img1.jpg"): [
+        Path("tests/data/images/OCR/entity_1_right_car.jpg"): [
             {"box": [10, 10, 5, 5], "feature": feat1, "timestamp": 10.0}
         ],
-        Path("img2.jpg"): [
+        Path("tests/data/images/OCR/entity_8_right_car.jpg"): [
             {"box": [12, 10, 5, 5], "feature": feat1, "timestamp": 25.0}
         ],  # Gap is 15.0 seconds
     }
-    image_paths = [Path("img1.jpg"), Path("img2.jpg")]
+    image_paths = [Path("tests/data/images/OCR/entity_1_right_car.jpg"), Path("tests/data/images/OCR/entity_8_right_car.jpg")]
 
     # Without max_gap, they match
     db, grouped = track_entities_in_directory(
@@ -250,12 +250,12 @@ def test_run_entry_exit_profiling_api():
          patch("src.processing.image_entityprofiler.extract_features_for_directory") as mock_extract, \
          patch("src.processing.image_entityprofiler.Path.exists", return_value=True), \
          patch("src.processing.image_entityprofiler.Path.is_file", return_value=True), \
-         patch("src.processing.image_entityprofiler.Path.rglob", return_value=[Path("img1_car.jpg")]):
+         patch("src.processing.image_entityprofiler.Path.rglob", return_value=[Path("tests/data/images/OCR/entity_1_right_car.jpg")]):
          
          mock_load.return_value = (MagicMock(), MagicMock(), MagicMock())
          
          mock_extract.return_value = {
-             Path("img1_car.jpg"): [
+             Path("tests/data/images/OCR/entity_1_right_car.jpg"): [
                  {
                      "box": [10, 20, 5, 5],
                      "feature": np.array([1.0, 0.0]),

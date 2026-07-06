@@ -17,6 +17,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from utility import imgutils
+
 
 class Direction(Enum):
     LEFT_RIGHT = auto()
@@ -473,20 +475,8 @@ def track_entities_in_directory(
     Sequentially processes images chronologically, matches crops to existing entities,
     and returns the database and grouped profile records.
     """
-    def get_image_timestamp(path: Path) -> float:
-        if path in results_dict and results_dict[path]:
-            path_ts = results_dict[path][0].get("timestamp")
-            if isinstance(path_ts, (int, float, str)):
-                return float(path_ts)
-        try:
-            return get_timestamp(path)
-        except (ValueError, OSError, RuntimeError):
-            try:
-                return float(path.stem)
-            except ValueError:
-                return 0.0
 
-    sorted_paths = sorted(image_paths, key=get_image_timestamp)
+    sorted_paths = sorted(image_paths, key=imgutils.get_timestamp)
     database: List[ProfileRecord] = []
     next_id = 1
 
@@ -501,7 +491,7 @@ def track_entities_in_directory(
             aspect_ratio = det.get("aspect_ratio")
             ts = det.get("timestamp")
             if ts is None:
-                ts = get_image_timestamp(img_path)
+                ts = imgutils.get_timestamp(img_path)
 
             # Filter database by max_gap if specified
             if max_gap is not None and ts is not None:
