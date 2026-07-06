@@ -210,6 +210,20 @@ class Instance(Base):
     image: Mapped[Image] = relationship(back_populates="instances")
     entity: Mapped[Entity] = relationship(back_populates="instances")
 
+    def overlap_with (self, other: Instance) -> float:
+        ax1 = self.x
+        ay1 = self.y
+        ax2 = self.x + self.width
+        ay2 = self.y + self.height
+        bx1 = other.x
+        by1 = other.y
+        bx2 = other.x + other.width
+        by2 = other.y + other.height
+
+        intersection = max(0, min(ax2, bx2) - max(ax1, bx1)) * max(0, min(ay2, by2) - max(ay1, by1))
+        union = (self.width * self.height) + (other.width * other.height) - intersection
+        return intersection / union
+
     def __repr__(self) -> str:
         return f"Instance({self.image_id}, {self.entity_id})"
 

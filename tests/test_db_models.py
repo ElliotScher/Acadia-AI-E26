@@ -39,8 +39,8 @@ def test_session():
         type_id=0,
         x=0,
         y=0,
-        width=0,
-        height=0,
+        width=100,
+        height=50,
         confidence=1,
     )
     instance2 = Instance(
@@ -49,8 +49,8 @@ def test_session():
         type_id=0,
         x=0,
         y=0,
-        width=0,
-        height=0,
+        width=100,
+        height=100,
         confidence=1,
     )
     instance3 = Instance(
@@ -58,9 +58,9 @@ def test_session():
         entity=entity1,
         type_id=0,
         x=0,
-        y=0,
-        width=0,
-        height=0,
+        y=50,
+        width=100,
+        height=100,
         confidence=1,
     )
     instance4 = Instance(
@@ -191,6 +191,10 @@ def test_instance(test_session: Session):
     assert instance1.entity.id == entity1.id
     assert instance1.image.id == image1.id
 
+    assert instance1.overlap_with(instance1) == 1
+    assert instance1.overlap_with(instance2) == 0.5
+    assert round(instance2.overlap_with(instance3), 3) == 0.333
+    assert instance1.overlap_with(instance3) == 0
 
 def test_delete_entity(test_session: Session):
     test_session.delete(entity1)
