@@ -56,13 +56,9 @@ class GalleryModel(QtCore.QAbstractListModel):
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
-# <<<<<<< HEAD
         return self.session.scalar(
             select(Image).where(Image.id == self.results[index.row()])
         )
-# =======
-#         return self.session.scalar(self.filters.makeFilter(select(Image)).order_by(Image.datetime).offset(index.row()).limit(1))
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -95,11 +91,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     ):
         newmax = min(
             self.size + 300,
-# <<<<<<< HEAD
             len(self.results),
-# =======
-#             self.filters.makeFilter(self.session.query(Image)).count(),  # type: ignore
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
         )
         self.beginInsertRows(QtCore.QModelIndex(), self.size, newmax - 1)
         self.size = newmax
@@ -108,11 +100,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     def canFetchMore(
         self, parent: QtCore.QModelIndex | QtCore.QPersistentModelIndex, /
     ) -> bool:
-# <<<<<<< HEAD
         return self.size < len(self.results)
-# =======
-#         return self.size < self.filters.makeFilter(self.session.query(Image)).count()  # type: ignore
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
 
 
 class ImageTab(QtWidgets.QWidget):
@@ -159,16 +147,6 @@ class ImageTab(QtWidgets.QWidget):
 
         self.refreshGallery()
 
-# <<<<<<< HEAD
-# =======
-#         minDt = datetime_to_qdatetime(Image.get_earliest_image(session).datetime) # type: ignore
-#         maxDt = datetime_to_qdatetime(Image.get_latest_image(session).datetime) # type: ignore
-#         self.filters.startDate.setDateTimeRange(minDt, maxDt)
-#         self.filters.endDate.setDateTimeRange(minDt, maxDt)
-#         self.filters.startDate.setDateTime(minDt)
-#         self.filters.endDate.setDateTime(maxDt)
-#
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
     @QtCore.Slot()
     def refreshGallery(self):
         if not hasattr(self, "session"):
@@ -178,7 +156,6 @@ class ImageTab(QtWidgets.QWidget):
         self.gallery.setModel(self.galleryModel)
         self.gallery.selectionModel().selectionChanged.connect(self.newselection)
 
-# <<<<<<< HEAD
         subquery = self.filters.makeFilter(
             Image.id, Image.path, Image.datetime
         ).subquery()
@@ -192,10 +169,6 @@ class ImageTab(QtWidgets.QWidget):
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
         self.count.setText(str(len(self.galleryModel.results)) + " images")
-# =======
-#         count = self.filters.makeFilter(self.session.query(Image)).count()  # type: ignore
-#         self.count.setText(str(count) + " images")
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
 
     @QtCore.Slot()
     def analyze(self, filtered: bool):
@@ -207,113 +180,15 @@ class ImageTab(QtWidgets.QWidget):
 
         images: list[Image] = []
         if filtered:
-# <<<<<<< HEAD
             images = self.session.scalars(self.filters.makeFilter(Image)).all()
-# =======
-#             images = self.session.scalars(self.filters.makeFilter(select(Image))).all()  # type: ignore
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
         else:
             images = list(
                 map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
             )
 
-# <<<<<<< HEAD
         dialog = AnalyzeDialog(self.session, self.yoloModel, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
-# =======
-#         for image in images:
-#             image.analyze(self.session, self.yoloModel)
-#
-#         self.refreshGallery()
-#
-#
-# class Filters(QtWidgets.QWidget):
-#     typeFilterMap: dict[str, int]
-#
-#     def __init__(self):
-#         super().__init__()
-#         filterLayout = QtWidgets.QHBoxLayout(self)
-#
-#         self.startDate = QtWidgets.QDateTimeEdit()
-#         self.startDate.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
-#         self.startDate.setCalendarPopup(True)
-#         self.startDate.dateTimeChanged.connect(self.refreshGallery)
-#         filterLayout.addWidget(self.startDate)
-#
-#         filterLayout.addWidget(QtWidgets.QLabel("to"))
-#
-#         self.endDate = QtWidgets.QDateTimeEdit()
-#         self.endDate.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
-#         self.endDate.setCalendarPopup(True)
-#         self.endDate.dateTimeChanged.connect(self.refreshGallery)
-#         filterLayout.addWidget(self.endDate)
-#
-#         self.analyzedFilter = QtWidgets.QComboBox()
-#         self.analyzedFilter.addItems(["All", "Only Analyzed", "Only Unanalyzed"])
-#         self.analyzedFilter.currentIndexChanged.connect(self.refreshGallery)
-#         filterLayout.addWidget(self.analyzedFilter)
-#
-#         self.minFilter = QtWidgets.QSpinBox()
-#         self.minFilter.setRange(0, 100)
-#         self.minFilter.valueChanged.connect(self.refreshGallery)
-#         filterLayout.addWidget(self.minFilter)
-#
-#         filterLayout.addWidget(QtWidgets.QLabel("-"))
-#
-#         self.maxFilter = QtWidgets.QSpinBox()
-#         self.maxFilter.setRange(0, 100)
-#         self.maxFilter.setValue(100)
-#         self.maxFilter.valueChanged.connect(self.refreshGallery)
-#         filterLayout.addWidget(self.maxFilter)
-#
-#         self.typeFilter = QtWidgets.QComboBox()
-#         self.typeFilter.currentIndexChanged.connect(self.refreshGallery)
-#         self.typeFilterMap = dict()
-#         typeFilterOptions = ["All"]
-#         for type_id in CLASS_ID_MAPPING:
-#             if CLASS_ID_MAPPING[type_id] not in typeFilterOptions:
-#                 typeFilterOptions.append(CLASS_ID_MAPPING[type_id])
-#                 self.typeFilterMap[CLASS_ID_MAPPING[type_id]] = type_id
-#         self.typeFilter.addItems(typeFilterOptions)
-#         filterLayout.addWidget(self.typeFilter)
-#
-#     def makeFilter(self, select: Select) -> Select:
-#         filters = select.where(
-#             Image.datetime >= self.startDate.dateTime().toPython()
-#         ).where(Image.datetime <= self.endDate.dateTime().toPython())
-#
-#         if self.analyzedFilter.currentIndex() == 1:
-#             filters = filters.where(Image.analyzed)
-#         elif self.analyzedFilter.currentIndex() == 2:
-#             filters = filters.where(Image.analyzed)
-#
-#         if (
-#             self.typeFilter.currentIndex() != 0
-#             or self.minFilter.value() > 0
-#             or self.maxFilter.value() < self.maxFilter.maximum()
-#         ):
-#             filters = filters.join(Image.instances).group_by(Image.id)
-#             if self.typeFilter.currentIndex() != 0:
-#                 filters = filters.having(
-#                     Instance.type_id
-#                     == self.typeFilterMap[self.typeFilter.currentText()]
-#                 )
-#             if self.minFilter.value() > 0:
-#                 filters = filters.having(
-#                     func.count(Instance.entity_id) >= self.minFilter.value()
-#                 )
-#             if self.maxFilter.value() < self.maxFilter.maximum():
-#                 filters = filters.having(
-#                     func.count(Instance.entity_id) <= self.maxFilter.value()
-#                 )
-#         return filters
-#
-#     @QtCore.Slot()
-#     def refreshGallery(self):
-#         if self.parentWidget() and self.parentWidget().parentWidget(): # type: ignore
-#             self.parentWidget().parentWidget().refreshGallery() # type: ignore
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
 
 
 class ImageGallery(QtWidgets.QListView):
@@ -427,14 +302,9 @@ class ImageViewer(QtWidgets.QGraphicsView):
         self.pixmapItem.setPixmap(pixmap)
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
-# <<<<<<< HEAD
         for i in range(len(instances)):
             instance = instances[i]
             self.scene.addRect(
-# =======
-#         for instance in instances:
-#             self._scene.addRect(
-# >>>>>>> 08c1dec (refactor(ui): added parallel utility module)
                 instance.x,
                 instance.y,
                 instance.width,
