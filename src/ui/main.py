@@ -37,16 +37,20 @@ class Root(QtWidgets.QMainWindow):
         aOpen = QtGui.QAction("Open", self)
         aOpen.triggered.connect(self.fileOpen)
         mFile.addAction(aOpen)
-        aExport = QtGui.QAction("Export", self)
-        mFile.addAction(aExport)
+        aExportFiltered = QtGui.QAction("Export Filtered", self)
+        aExportFiltered.triggered.connect(self.fileExportFiltered)
+        mFile.addAction(aExportFiltered)
+        aExportAll = QtGui.QAction("Export All", self)
+        aExportAll.triggered.connect(self.fileExportAll)
+        mFile.addAction(aExportAll)
 
         mAnalyze = self.menuBar().addMenu("Analyze")
         aAnalyzeFiltered = QtGui.QAction("Analyze Filtered", self)
         aAnalyzeFiltered.triggered.connect(self.analyzeFiltered)
         mAnalyze.addAction(aAnalyzeFiltered)
-        aAnalyzeSelection = QtGui.QAction("Analyze Selection", self)
-        aAnalyzeSelection.triggered.connect(self.analyzeSelection)
-        mAnalyze.addAction(aAnalyzeSelection)
+        aAnalyzeAll = QtGui.QAction("Analyze All", self)
+        aAnalyzeAll.triggered.connect(self.analyzeAll)
+        mAnalyze.addAction(aAnalyzeAll)
 
         mSelect = self.menuBar().addMenu("Select")
         aSelectAll = QtGui.QAction("Select All", self)
@@ -70,6 +74,26 @@ class Root(QtWidgets.QMainWindow):
         self.imageTab.setsession(self.session)
 
     @QtCore.Slot()
+    def fileExportFiltered(self):
+        isImages = self.tabs.currentWidget() == self.imageTab
+        path = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save export...", "images.csv" if isImages else "entities.csv"
+        )
+        if len(path[0]) > 0 and hasattr(self, "session"):
+            if isImages:
+                self.imageTab.export(True, path[0])
+
+    @QtCore.Slot()
+    def fileExportAll(self):
+        isImages = self.tabs.currentWidget() == self.imageTab
+        path = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save export...", "images.csv" if isImages else "entities.csv"
+        )
+        if len(path[0]) > 0 and hasattr(self, "session"):
+            if isImages:
+                self.imageTab.export(False, path[0])
+
+    @QtCore.Slot()
     def selectAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.gallery.selectAll()
@@ -90,7 +114,7 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.analyze(True)
 
     @QtCore.Slot()
-    def analyzeSelection(self):
+    def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
 

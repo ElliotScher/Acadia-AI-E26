@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select, Select, func, union
 from sqlalchemy.orm import Session
 from datetime import datetime, time
+import csv
 
 from detection.yolo import load_model, CLASS_ID_MAPPING
 from db.models import Image, Instance
@@ -57,11 +58,9 @@ class GalleryModel(QtCore.QAbstractListModel):
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
         return self.getById(self.results[index.row()])
-    
+
     def getById(self, id: int) -> Image:
-        return self.session.scalar(
-            select(Image).where(Image.id == id)
-        )
+        return self.session.scalar(select(Image).where(Image.id == id))
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -183,17 +182,59 @@ class ImageTab(QtWidgets.QWidget):
 
         images = []
         if filtered:
-            images = list(
-                map(self.galleryModel.getById, self.galleryModel.results)
-            )
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
-            images = list(
-                map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
+            images = self.session.scalars(
+                select(Image).order_by(subquery.c.datetime).distinct()
             )
 
         dialog = AnalyzeDialog(self.session, self.yoloModel, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
+
+    @QtCore.Slot()
+    def export(self, filtered: bool, path: str):
+        if not hasattr(self, "session"):
+            return
+
+        images = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = self.session.scalars(
+                select(Image).order_by(Image.datetime).distinct()
+            )
+
+        with open(path, mode="w", newline="") as file:
+            writer = csv.writer(file)
+
+            header = ["date", "time"]
+            entityCounts: dict[int, int] = dict()
+            for present_type in Instance.get_present_types(self.session):
+                header.append(CLASS_ID_MAPPING[present_type] + " count")
+                entityCounts[present_type] = 0
+
+            writer.writerows([header])
+            data = []
+
+            for image in images:
+                row = [
+                    image.datetime.strftime("%Y-%m-%d"),
+                    image.datetime.strftime("%H:%M:%S"),
+                ]
+                for instance in image.get_instances(self.session):
+                    entityCounts[instance.type_id] += 1
+                for entity in entityCounts.keys():
+                    row.append(entityCounts[entity])
+                    entityCounts[entity] = 0
+                data.append(row)
+
+                if len(data) > 100:
+                    writer.writerows(data)
+                    data = []
+
+            if len(data) > 0:
+                writer.writerows(data)
 
 
 class ImageGallery(QtWidgets.QListView):

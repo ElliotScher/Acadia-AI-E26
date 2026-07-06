@@ -213,6 +213,10 @@ class Instance(Base):
     def __repr__(self) -> str:
         return f"Instance({self.image_id}, {self.entity_id})"
 
+    @staticmethod
+    def get_present_types(session: Session) -> list[int]:
+        return list(session.scalars(select(Instance.type_id).distinct()))
+
 
 trigger_ddl = DDL("""
 CREATE TRIGGER IF NOT EXISTS delete_entity_when_last_instance_deleted
