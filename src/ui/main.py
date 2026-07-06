@@ -8,7 +8,7 @@ from db import get_db
 from db.models import Image
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
-
+from detection.bike_rider_merging import merge_bikes_riders
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -47,6 +47,9 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeSelection = QtGui.QAction("Analyze Selection", self)
         aAnalyzeSelection.triggered.connect(self.analyzeSelection)
         mAnalyze.addAction(aAnalyzeSelection)
+        aMergeBikes = QtGui.QAction("Merge Bikes and Riders", self)
+        aMergeBikes.triggered.connect(self.analyzeMergeBikes)
+        mAnalyze.addAction(aMergeBikes)
 
         mSelect = self.menuBar().addMenu("Select")
         aSelectAll = QtGui.QAction("Select All", self)
@@ -93,6 +96,11 @@ class Root(QtWidgets.QMainWindow):
     def analyzeSelection(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
+    
+    @QtCore.Slot()
+    def analyzeMergeBikes(self):
+        if hasattr(self, "session"):
+            merge_bikes_riders(self.session, 0.2)
 
 
 # class SetupTab(QtWidgets.QWidget):

@@ -196,6 +196,7 @@ def test_instance(test_session: Session):
     assert round(instance2.overlap_with(instance3), 3) == 0.333
     assert instance1.overlap_with(instance3) == 0
 
+
 def test_delete_entity(test_session: Session):
     test_session.delete(entity1)
     test_session.commit()
