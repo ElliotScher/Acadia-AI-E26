@@ -56,8 +56,11 @@ class GalleryModel(QtCore.QAbstractListModel):
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
+        return self.getById(self.results[index.row()])
+    
+    def getById(self, id: int) -> Image:
         return self.session.scalar(
-            select(Image).where(Image.id == self.results[index.row()])
+            select(Image).where(Image.id == id)
         )
 
     def data(
@@ -180,7 +183,9 @@ class ImageTab(QtWidgets.QWidget):
 
         images = []
         if filtered:
-            images = self.session.scalars(self.filters.makeFilter(Image)).all()
+            images = list(
+                map(self.galleryModel.getById, self.galleryModel.results)
+            )
         else:
             images = list(
                 map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
