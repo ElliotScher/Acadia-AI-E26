@@ -20,7 +20,6 @@ from db import get_db
 from db.models import Entity, Image, Video
 from ui.analyze_dialog import AnalyzeDialog
 
-
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -81,11 +80,9 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
         aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
         mAnalyze.addAction(aAnalyzeClustersFiltered)
-        aAnalyzeClustersAll = QtGui.QAction("Analyze Filtered Clusters", self)
-        aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
-        mAnalyze.addAction(aAnalyzeClustersAll)
         aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
         aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
+        mAnalyze.addAction(aAnalyzeClustersAll)
         aMergeBikesFiltered = QtGui.QAction("Merge Filtered Bikes and Riders", self)
         aMergeBikesFiltered.triggered.connect(self.analyzeMergeBikesFiltered)
         mAnalyze.addAction(aMergeBikesFiltered)

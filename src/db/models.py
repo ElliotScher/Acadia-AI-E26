@@ -460,7 +460,7 @@ class Instance(Base):
     image: Mapped[Image] = relationship(back_populates="instances")
     entity: Mapped[Entity] = relationship(back_populates="instances")
 
-    def overlap_with (self, other: Instance) -> float:
+    def overlap_with(self, other: Instance) -> float:
         ax1 = self.x
         ay1 = self.y
         ax2 = self.x + self.width
