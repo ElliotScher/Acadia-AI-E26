@@ -18,6 +18,7 @@ from db import get_db
 from db.models import Entity, Image, Video
 from ui.analyze_dialog import AnalyzeDialog
 
+from detection.bike_rider_merging import merge_bikes_riders
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -89,7 +90,9 @@ class Root(QtWidgets.QMainWindow):
         mAnalyze.addAction(aAnalyzeClustersFiltered)
         aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
         aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
-        mAnalyze.addAction(aAnalyzeClustersAll)
+        aMergeBikes = QtGui.QAction("Merge Bikes and Riders", self)
+        aMergeBikes.triggered.connect(self.analyzeMergeBikes)
+        mAnalyze.addAction(aMergeBikes)
 
         aAnalyzePoseDirection = QtGui.QAction(
             "Analyze Filtered For Direction From Poses", self
@@ -153,6 +156,11 @@ class Root(QtWidgets.QMainWindow):
     def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
+    
+    @QtCore.Slot()
+    def analyzeMergeBikes(self):
+        if hasattr(self, "session"):
+            merge_bikes_riders(self.session, 0.2)
 
     @QtCore.Slot()
 
