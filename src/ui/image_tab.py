@@ -304,7 +304,7 @@ class ImageViewer(QtWidgets.QGraphicsView):
 
         for i in range(len(instances)):
             instance = instances[i]
-            self.scene.addRect(
+            self._scene.addRect(
                 instance.x,
                 instance.y,
                 instance.width,
