@@ -222,6 +222,10 @@ def test_instance(test_session: Session):
     assert present_types[0] == 0
     assert present_types[1] == 1
 
+    assert instance1.overlap_with(instance1) == 1
+    assert instance1.overlap_with(instance2) == 0.5
+    assert round(instance2.overlap_with(instance3), 3) == 0.333
+    assert instance1.overlap_with(instance3) == 0
 
 def test_delete_entity(test_session: Session):
     test_session.delete(entity1)
