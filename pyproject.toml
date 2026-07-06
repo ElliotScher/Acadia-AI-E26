@@ -14,5 +14,21 @@ dependencies = [
     "ultralytics>=8.0.0",
     "opencv-python>=4.0.0",
     "tqdm>=4.66.0",
-    "torch>=2.12.1"
+    "torch>=2.12.1",
+    "pyside6>=6.11.1",
+    "black>=26.5.1",
+    "pytesseract>=0.3.13"
+]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: marks tests as slow integration tests (deselect with '-m \"not integration\"')"
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
 ]
