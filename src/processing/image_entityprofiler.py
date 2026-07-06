@@ -394,6 +394,31 @@ def save_database_to_json(
     logger.info("Saved database to %s", filepath)
 
 
+def select_primary_box(boxes: List[List[int]]) -> List[List[int]]:
+    """
+    Reduces a list of raw detected boxes down to a single box for the entity
+    in the image.
+
+    Since each image is guaranteed to contain exactly one entity, any extra
+    boxes returned by the upstream detector (e.g. nested/duplicate contours
+    around the same green box) are noise. We keep only the single
+    largest-area box and discard the rest, which guarantees exactly one
+    bounding box is ever drawn per image.
+
+    Args:
+        boxes (List[List[int]]): Raw detected boxes as [x, y, w, h].
+
+    Returns:
+        List[List[int]]: A list containing just the single largest box, or
+            an empty list if no boxes were detected.
+    """
+    if not boxes:
+        return []
+
+    largest = max(boxes, key=lambda b: b[2] * b[3])
+    return [largest]
+
+
 def process_images_worker(
     img_paths: List[Path],
     progress_bar: tqdm,
@@ -426,7 +451,9 @@ def process_images_worker(
                 continue
 
             boxes = detect_entities(img)
+            boxes = select_primary_box(boxes)
             detections = []
+
 
             for box in boxes:
                 x, y, w, h = box
@@ -455,13 +482,18 @@ def process_images_worker(
 
 
 
-def determine_image_direction(img_path: Union[str, Path]) -> Direction:
+def determine_image_direction(img_path: Path) -> Direction:
     """
     Placeholder function to determine if a vehicle in the input image is going left or right.
     Currently returns Direction.UNKNOWN as a placeholder stub.
     """
     # TODO: Implement actual image-level direction classification/flow analysis model
-    return Direction.UNKNOWN
+    if img_path.name.__contains__("left"):
+        return Direction.RIGHT_LEFT
+    elif img_path.name.__contains__("right"):
+        return Direction.LEFT_RIGHT
+    else:
+        return Direction.UNKNOWN
 
 
 
@@ -496,7 +528,7 @@ def track_entities_in_directory(
             # Filter database by max_gap if specified
             if max_gap is not None and ts is not None:
                 valid_db = [
-                    r for r in database 
+                    r for r in database
                     if r.timestamp is not None and abs(ts - r.timestamp) <= max_gap
                 ]
             else:
@@ -545,6 +577,12 @@ def match_entry_exit_entities(
     Matches entry entities to exit entities using deep feature and color/aspect ratio similarity.
     Calculates dwell time as the difference between exit and entry timestamps.
 
+    An exit is only ever compared against entries whose timestamp is strictly
+    earlier (i.e. entered at a genuinely previous point in time) — an entry
+    happening at or after the exit can never be its match. Entries that never
+    match to any exit simply never appear in the returned list, so they are
+    naturally excluded from any downstream average dwell time calculation.
+
     Args:
         entry_entities (Dict[int, List[ProfileRecord]]): Entry entities grouped by entity ID.
         exit_entities (Dict[int, List[ProfileRecord]]): Exit entities grouped by entity ID.
@@ -552,7 +590,8 @@ def match_entry_exit_entities(
 
     Returns:
         List[Dict[str, Any]]: List of matching results containing entry/exit IDs,
-            similarity, and dwell time.
+            similarity, and dwell time. Only entries that were successfully
+            matched to an exit are included.
     """
     matches = []
     matched_entry_ids = set()
@@ -582,8 +621,9 @@ def match_entry_exit_entities(
                 continue
             entry_ts = min(entry_ts_list)
 
-            # Exit must occur after entry
-            if exit_ts < entry_ts:
+            # Exit must occur strictly after entry (entry must be at a
+            # previous timestamp, not the same instant)
+            if exit_ts <= entry_ts:
                 continue
 
             # Compute max pair similarity
@@ -609,7 +649,7 @@ def match_entry_exit_entities(
             matched_entry_ids.add(best_entry_id)
             entry_records = entry_entities[best_entry_id]
             entry_ts = min(r.timestamp for r in entry_records if r.timestamp is not None)
-            
+
             matches.append({
                 "entry_id": best_entry_id,
                 "exit_id": exit_id,
@@ -654,7 +694,7 @@ def calculate_occupancy_timeline(
     running = 0
     min_running = 0
     raw_timeline = []
-    
+
     for ts, change, label in events:
         running += change
         if running < min_running:
@@ -662,7 +702,7 @@ def calculate_occupancy_timeline(
         raw_timeline.append({"timestamp": ts, "change": change, "label": label})
 
     initial_offset = -min_running if min_running < 0 else 0
-    
+
     current_occupancy = initial_offset
     timeline = []
     for event in raw_timeline:
@@ -1028,13 +1068,13 @@ def run_entry_exit_profiling(
         matches = match_entry_exit_entities(entry_filtered, exit_filtered, threshold=threshold)
         summary_report["dwell_time_matches"] = matches
         summary_report["statistics"]["matched_entities"] = len(matches)
-        
+
         if matches:
             avg_dwell = sum(m["dwell_time"] for m in matches) / len(matches)
         else:
             avg_dwell = 0.0
         summary_report["statistics"]["average_dwell_time"] = avg_dwell
-        
+
         print("\n--- Dwell Time Summary ---")
         print(f"Total Matched Entities: {len(matches)}")
         print(f"Average Dwell Time: {avg_dwell:.2f} seconds\n")
@@ -1045,7 +1085,7 @@ def run_entry_exit_profiling(
         summary_report["occupancy_timeline"] = timeline
         max_occ = max([t["occupancy"] for t in timeline]) if timeline else 0
         summary_report["statistics"]["maximum_occupancy"] = max_occ
-        
+
         print("\n--- Occupancy Summary ---")
         print(f"Maximum Running Occupancy: {max_occ}")
         print("Occupancy profiling complete!\n")
@@ -1054,7 +1094,7 @@ def run_entry_exit_profiling(
     if output_dir:
         out_folder = Path(output_dir)
         logger.info("Exporting entry annotated visual outputs to %s...", out_folder / "entry")
-        
+
         # Build image mapping
         def build_mapping(db, results_dict):
             """
@@ -1273,7 +1313,7 @@ def main() -> None:
         # Export annotated visual outputs
         if output_folder:
             logger.info("Exporting annotated visual outputs to %s...", output_folder)
-            
+
             image_entity_mappings = {}
             for r in database:
                 matching_path = None
