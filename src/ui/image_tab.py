@@ -184,7 +184,7 @@ class ImageTab(QtWidgets.QWidget):
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
             images = self.session.scalars(
-                select(Image).order_by(subquery.c.datetime).distinct()
+                select(Image).order_by(Image.datetime).distinct()
             )
 
         dialog = AnalyzeDialog(self.session, self.yoloModel, images)
