@@ -1,7 +1,8 @@
 import os
 import sys
 
-import image_tab as it
+from image_tab import ImageTab
+from entity_tab import EntitiesTab
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from db import get_db
@@ -22,7 +23,7 @@ class Root(QtWidgets.QMainWindow):
         self.setCentralWidget(self.widget)
         layout = QtWidgets.QVBoxLayout(self.widget)
 
-        self.imageTab = it.ImageTab()
+        self.imageTab = ImageTab()
         self.entitiesTab = EntitiesTab()
 
         self.tabs = QtWidgets.QTabWidget()
@@ -72,6 +73,7 @@ class Root(QtWidgets.QMainWindow):
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
         self.imageTab.setsession(self.session)
+        self.entitiesTab.setsession(self.session)
 
     @QtCore.Slot()
     def fileExportFiltered(self):
@@ -117,16 +119,6 @@ class Root(QtWidgets.QMainWindow):
     def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
-
-
-class EntitiesTab(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
-
-        self.text = QtWidgets.QLabel("Entities tab")
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.text)
 
 
 if __name__ == "__main__":
