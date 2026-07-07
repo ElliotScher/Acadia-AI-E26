@@ -63,5 +63,8 @@ build/
 # YOLO Models
 *.pt
 
+# Database
+*.db
+*.csv
 #.envrc
 .envrc
