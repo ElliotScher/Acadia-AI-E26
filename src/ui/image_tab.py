@@ -1,30 +1,65 @@
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select, Select, func
+from sqlalchemy import select, Select, func, union
 from sqlalchemy.orm import Session
 from datetime import datetime, time
 
 from detection.yolo import load_model, CLASS_ID_MAPPING
 from db.models import Image, Instance
+from filters import Filters
+from filters.image import (
+    EntityFilter,
+    NoEntityFilter,
+    ImageTimeFilter,
+    ImageDateFilter,
+    AnalyzedFilter,
+    NotAnalyzedFilter,
+)
 from analyze_dialog import AnalyzeDialog
+
+colors = (
+    "#00ff00",
+    "#ff00ff",
+    "#00ffff",
+    "#ffff00",
+    "#ff0000",
+    "#0000ff",
+    "#ff8800",
+    "#8800ff",
+    "#0088ff",
+    "#008800",
+    "#888888",
+    "#ff0088",
+    "#ff8888",
+    "#88ff88",
+    "#8888ff",
+    "#ffff88",
+    "#ff88ff",
+    "#88ffff",
+)
 
 
 class GalleryModel(QtCore.QAbstractListModel):
     session: Session
-    images: dict[str, QtGui.QIcon]
+    results: list[int]
+    thumbnails: dict[int, QtGui.QIcon]
     size: int = 0
     filters: "Filters"
 
     def __init__(self, session: Session):
         self.session = session
-        self.images = dict()
+        self.thumbnails = dict()
+        self.results = []
         super().__init__()
 
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
-        return self.session.scalar(self.filters.makeFilter(select(Image)).order_by(Image.datetime).offset(index.row()).limit(1))  # type: ignore
+        return self.getById(self.results[index.row()])
+
+    def getById(self, id: int) -> Image:
+        return self.session.scalar(select(Image).where(Image.id == id))
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -32,13 +67,13 @@ class GalleryModel(QtCore.QAbstractListModel):
         if role == QtCore.Qt.ItemDataRole.DecorationRole:
             data = self.getByIndex(index)
             if data:
-                if data.path in self.images:
-                    return self.images[data.path]
+                if data.id in self.thumbnails:
+                    return self.thumbnails[data.id]
                 else:
-                    if len(self.images) > 300:
-                        self.images = dict()
+                    if len(self.thumbnails) > 300:
+                        self.thumbnails = dict()
                     img = QtGui.QIcon(data.path)
-                    self.images[data.path] = img
+                    self.thumbnails[data.id] = img
                     return img
 
     def rowCount(
@@ -56,7 +91,8 @@ class GalleryModel(QtCore.QAbstractListModel):
         ) = QtCore.QModelIndex(),
     ):
         newmax = min(
-            self.size + 300, self.filters.makeFilter(self.session.query(Image)).count()
+            self.size + 300,
+            len(self.results),
         )
         self.beginInsertRows(QtCore.QModelIndex(), self.size, newmax - 1)
         self.size = newmax
@@ -65,7 +101,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     def canFetchMore(
         self, parent: QtCore.QModelIndex | QtCore.QPersistentModelIndex, /
     ) -> bool:
-        return self.size < self.filters.makeFilter(self.session.query(Image)).count()
+        return self.size < len(self.results)
 
 
 class ImageTab(QtWidgets.QWidget):
@@ -78,8 +114,18 @@ class ImageTab(QtWidgets.QWidget):
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
-        self.filters = Filters()
+        self.filters = Filters(
+            (
+                EntityFilter,
+                NoEntityFilter,
+                ImageTimeFilter,
+                ImageDateFilter,
+                AnalyzedFilter,
+                NotAnalyzedFilter,
+            )
+        )
         gallerySideLayout.addWidget(self.filters)
+        self.filters.changed.connect(self.refreshGallery)
         self.count = QtWidgets.QLabel("0 images")
         gallerySideLayout.addWidget(self.count)
         self.gallery = ImageGallery()
@@ -102,13 +148,6 @@ class ImageTab(QtWidgets.QWidget):
 
         self.refreshGallery()
 
-        minDt = datetime_to_qdatetime(Image.get_earliest_image(session).datetime)
-        maxDt = datetime_to_qdatetime(Image.get_latest_image(session).datetime)
-        self.filters.startDate.setDateTimeRange(minDt, maxDt)
-        self.filters.endDate.setDateTimeRange(minDt, maxDt)
-        self.filters.startDate.setDateTime(minDt)
-        self.filters.endDate.setDateTime(maxDt)
-
     @QtCore.Slot()
     def refreshGallery(self):
         if not hasattr(self, "session"):
@@ -118,22 +157,19 @@ class ImageTab(QtWidgets.QWidget):
         self.gallery.setModel(self.galleryModel)
         self.gallery.selectionModel().selectionChanged.connect(self.newselection)
 
-        count = self.filters.makeFilter(self.session.query(Image)).count()
-        self.count.setText(str(count) + " images")
-
-        types = self.session.scalars(select(Instance.type_id).distinct()).unique().all()
-        self.filters.typeFilter.currentIndexChanged.connect(self.refreshGallery)
-        self.filters.typeFilter.currentIndexChanged.disconnect(self.refreshGallery)
-        selectedTypeFilter = self.filters.typeFilter.currentText()
-        self.filters.typeFilter.clear()
-        self.filters.typeFilter.addItems(["All"])
-        self.filters.typeFilterMap = dict()
-        for type_id in types:
-            self.filters.typeFilter.addItems([CLASS_ID_MAPPING[type_id].title()])
-            self.filters.typeFilterMap[CLASS_ID_MAPPING[type_id].title()] = type_id
-        if selectedTypeFilter in self.filters.typeFilterMap:
-            self.filters.typeFilter.setCurrentText(selectedTypeFilter)
-        self.filters.typeFilter.currentIndexChanged.connect(self.refreshGallery)
+        subquery = self.filters.makeFilter(
+            Image.id, Image.path, Image.datetime
+        ).subquery()
+        query = (
+            select(subquery)
+            .select_from(subquery)
+            .order_by(subquery.c.datetime)
+            .distinct()
+        )
+        self.galleryModel.results = list(
+            map(lambda d: d[0], self.session.execute(query).unique().all())
+        )
+        self.count.setText(str(len(self.galleryModel.results)) + " images")
 
     @QtCore.Slot()
     def analyze(self, filtered: bool):
@@ -145,97 +181,30 @@ class ImageTab(QtWidgets.QWidget):
 
         images = []
         if filtered:
-            images = self.session.scalars(self.filters.makeFilter(select(Image))).all()
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
-            images = list(
-                map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
+            images = self.session.scalars(
+                select(Image).order_by(Image.datetime).distinct()
             )
 
         dialog = AnalyzeDialog(self.session, self.yoloModel, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
-
-class Filters(QtWidgets.QWidget):
-    typeFilterMap: dict[str, int]
-
-    def __init__(self):
-        super().__init__()
-        filterLayout = QtWidgets.QHBoxLayout(self)
-
-        self.startDate = QtWidgets.QDateTimeEdit()
-        self.startDate.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
-        self.startDate.setCalendarPopup(True)
-        self.startDate.dateTimeChanged.connect(self.refreshGallery)
-        filterLayout.addWidget(self.startDate)
-
-        filterLayout.addWidget(QtWidgets.QLabel("to"))
-
-        self.endDate = QtWidgets.QDateTimeEdit()
-        self.endDate.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
-        self.endDate.setCalendarPopup(True)
-        self.endDate.dateTimeChanged.connect(self.refreshGallery)
-        filterLayout.addWidget(self.endDate)
-
-        self.analyzedFilter = QtWidgets.QComboBox()
-        self.analyzedFilter.addItems(["All", "Only Analyzed", "Only Unanalyzed"])
-        self.analyzedFilter.currentIndexChanged.connect(self.refreshGallery)
-        filterLayout.addWidget(self.analyzedFilter)
-
-        self.minFilter = QtWidgets.QSpinBox()
-        self.minFilter.setRange(0, 100)
-        self.minFilter.valueChanged.connect(self.refreshGallery)
-        filterLayout.addWidget(self.minFilter)
-
-        filterLayout.addWidget(QtWidgets.QLabel("-"))
-
-        self.maxFilter = QtWidgets.QSpinBox()
-        self.maxFilter.setRange(0, 100)
-        self.maxFilter.setValue(100)
-        self.maxFilter.valueChanged.connect(self.refreshGallery)
-        filterLayout.addWidget(self.maxFilter)
-
-        self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilterMap = dict()
-        self.typeFilter.addItems(["All"])
-        self.typeFilter.setMinimumWidth(100)
-        filterLayout.addWidget(self.typeFilter)
-
-    def makeFilter(self, select: Select) -> Select:
-        filters = select.where(
-            Image.datetime >= self.startDate.dateTime().toPython()
-        ).where(Image.datetime <= self.endDate.dateTime().toPython())
-
-        if self.analyzedFilter.currentIndex() == 1:
-            filters = filters.where(Image.analyzed == True)
-        elif self.analyzedFilter.currentIndex() == 2:
-            filters = filters.where(Image.analyzed == False)
-
-        if (
-            self.typeFilter.currentIndex() != 0
-            or self.minFilter.value() > 0
-            or self.maxFilter.value() < self.maxFilter.maximum()
-        ):
-            filters = filters.join(Image.instances)
-            if self.typeFilter.currentIndex() != 0:
-                filters = filters.where(
-                    Instance.type_id
-                    == self.typeFilterMap[self.typeFilter.currentText()]
-                )
-            if self.minFilter.value() > 0:
-                filters = filters.group_by(Image.id).having(
-                    func.count(Instance.entity_id) >= self.minFilter.value()
-                )
-            if self.maxFilter.value() < self.maxFilter.maximum():
-                filters = filters.group_by(Image.id).having(
-                    func.count(Instance.entity_id) <= self.maxFilter.value()
-                )
-        return filters
-
     @QtCore.Slot()
-    def refreshGallery(self):
-        if self.parentWidget() and self.parentWidget().parentWidget():
-            self.parentWidget().parentWidget().refreshGallery()
+    def export(self, filtered: bool, path: str):
+        if not hasattr(self, "session"):
+            return
+
+        images = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = self.session.scalars(
+                select(Image).order_by(Image.datetime).distinct()
+            )
+
+        Image.export_to_csv(self.session, images, path)
 
 
 class ImageGallery(QtWidgets.QListView):
@@ -297,12 +266,16 @@ class ImageInfo(QtWidgets.QGroupBox):
     def showone(self, image: Image, session: Session):
         instances = image.get_instances(session)
         instancesText = ""
-        for instance in instances:
+        for i in range(len(instances)):
+            instance = instances[i]
             instancesText += (
-                CLASS_ID_MAPPING[instance.type_id].title()
+                '<font color="'
+                + colors[i % len(colors)]
+                + '">'
+                + CLASS_ID_MAPPING[instance.type_id].title()
                 + " "
                 + str(round(instance.confidence * 10000) / 100)
-                + "% confidence\n"
+                + "% confidence</font><br>"
             )
 
         self.viewer.set(image, instances)
@@ -345,13 +318,14 @@ class ImageViewer(QtWidgets.QGraphicsView):
         self.pixmapItem.setPixmap(pixmap)
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
-        for instance in instances:
+        for i in range(len(instances)):
+            instance = instances[i]
             self.scene.addRect(
                 instance.x,
                 instance.y,
                 instance.width,
                 instance.height,
-                self.getpen("green"),
+                self.getpen(colors[i % len(colors)]),
             )
 
     def resizeEvent(self, event):
@@ -369,13 +343,3 @@ class ImageViewer(QtWidgets.QGraphicsView):
         pen = QtGui.QPen(color)
         pen.setWidth(10)
         return pen
-
-
-def datetime_to_qdatetime(dt: datetime):
-    return QtCore.QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, 0)
-
-def datetime_to_qdate(dt: datetime):
-    return QtCore.QDate(dt.year, dt.month, dt.day)
-
-def time_to_qtime(t: time):
-    return QtCore.QTime(t.hour, t.minute, t.second, 0)

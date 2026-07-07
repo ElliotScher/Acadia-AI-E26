@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 from db.models import Image
 import math
 
+
 class AnalyzeDialog(QtWidgets.QDialog):
-    def __init__ (self, session: Session, yoloModel, images: list[Image], *args, **kwargs):
+    def __init__(
+        self, session: Session, yoloModel, images: list[Image], *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.session = session
         self.yoloModel = yoloModel
@@ -35,7 +38,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 checkbox.setChecked(True)
             self.typesCheckboxes.append(checkbox)
             self.typesLayout.addWidget(checkbox, math.floor(id / 3), id % 3)
-        
+
         layout.addWidget(self.typesGroup)
 
         minConfidenceLayout = QtWidgets.QHBoxLayout()
@@ -48,7 +51,10 @@ class AnalyzeDialog(QtWidgets.QDialog):
         minConfidenceLayout.addWidget(self.minConfidence)
         layout.addLayout(minConfidenceLayout)
 
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        self.buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
         layout.addWidget(self.buttons)
         self.buttons.accepted.connect(self.analyze)
         self.buttons.rejected.connect(self.reject)
@@ -63,6 +69,8 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 target_classes.append(i)
 
         for image in self.images:
-            image.analyze(self.session, self.yoloModel, self.minConfidence.value(), target_classes)
-        
+            image.analyze(
+                self.session, self.yoloModel, self.minConfidence.value(), target_classes
+            )
+
         self.accept()
