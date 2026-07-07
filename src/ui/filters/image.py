@@ -53,7 +53,7 @@ class ImageDateFilter(DateFilter):
         return query.where(
             and_(
                 Image.datetime >= self.startDate.dateTime().toPython(),
-                Image.datetime <= self.endDate.dateTime().toPython(),
+                Image.datetime <= self.endDate.dateTime().addSecs(86399).toPython(),
             )
         )
 

@@ -56,9 +56,10 @@ class GalleryModel(QtCore.QAbstractListModel):
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
-        return self.session.scalar(
-            select(Image).where(Image.id == self.results[index.row()])
-        )
+        return self.getById(self.results[index.row()])
+
+    def getById(self, id: int) -> Image:
+        return self.session.scalar(select(Image).where(Image.id == id))
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -180,15 +181,30 @@ class ImageTab(QtWidgets.QWidget):
 
         images: list[Image] = []
         if filtered:
-            images = self.session.scalars(self.filters.makeFilter(Image)).all()
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
-            images = list(
-                map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
+            images = self.session.scalars(
+                select(Image).order_by(Image.datetime).distinct()
             )
 
         dialog = AnalyzeDialog(self.session, self.yoloModel, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
+
+    @QtCore.Slot()
+    def export(self, filtered: bool, path: str):
+        if not hasattr(self, "session"):
+            return
+
+        images = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = self.session.scalars(
+                select(Image).order_by(Image.datetime).distinct()
+            )
+
+        Image.export_to_csv(self.session, images, path)
 
 
 class ImageGallery(QtWidgets.QListView):

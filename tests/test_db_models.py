@@ -191,6 +191,11 @@ def test_instance(test_session: Session):
     assert instance1.entity.id == entity1.id
     assert instance1.image.id == image1.id
 
+    present_types = Instance.get_present_types(test_session)
+    assert len(present_types) == 2
+    assert present_types[0] == 0
+    assert present_types[1] == 1
+
 
 def test_delete_entity(test_session: Session):
     test_session.delete(entity1)
