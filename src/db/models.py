@@ -53,7 +53,7 @@ class Image(Base):
         if (
             self.time is None
         ):  # editor may say code is unreachable, necessary for migrations
-            self.time = time(
+            self.time = dt.time(
                 self.datetime.hour, self.datetime.minute, self.datetime.second
             )
 

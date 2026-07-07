@@ -177,9 +177,9 @@ def test_image(test_session: Session):
     assert entities[1].id == entity2.id
 
     earliestImage = Image.get_earliest_image(test_session)
-    assert earliestImage and earliestImage.id == image1.id
+    assert earliestImage is not None and earliestImage.id == image1.id
     latestImage = Image.get_latest_image(test_session)
-    assert latestImage and latestImage == image4.id
+    assert latestImage is not None and latestImage.id == image4.id
     test_session.delete(image1)
     test_session.delete(image2)
     test_session.delete(image3)
