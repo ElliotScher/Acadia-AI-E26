@@ -3,7 +3,8 @@
 import os
 import sys
 
-import image_tab as it
+from image_tab import ImageTab
+from entity_tab import EntitiesTab
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ class Root(QtWidgets.QMainWindow):
         self.setCentralWidget(self.widget)
         layout = QtWidgets.QVBoxLayout(self.widget)
 
-        self.imageTab = it.ImageTab()
+        self.imageTab = ImageTab()
         self.entitiesTab = EntitiesTab()
 
         self.tabs = QtWidgets.QTabWidget()
@@ -88,13 +89,13 @@ class Root(QtWidgets.QMainWindow):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        # self.imageTab.setsession(self.session)
+        self.imageTab.setsession(self.session)
+        self.entitiesTab.setsession(self.session)
 
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
         thread = upl.Async("File Open", lambda: self._fileOpen(path))
-        thread.finished.connect(lambda: self.imageTab.setsession(self.session))
         thread.start()
 
     @QtCore.Slot()
@@ -151,16 +152,6 @@ class Root(QtWidgets.QMainWindow):
     def analyzeClustersAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzeClusters(False)
-
-
-class EntitiesTab(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
-
-        self.text = QtWidgets.QLabel("Entities tab")
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.text)
 
 
 if __name__ == "__main__":
