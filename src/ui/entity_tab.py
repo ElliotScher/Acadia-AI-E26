@@ -1,7 +1,7 @@
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
 
 from detection.yolo import CLASS_ID_MAPPING
@@ -253,30 +253,34 @@ class EntityViewer(QtWidgets.QGraphicsView):
         image = entity.get_latest_image(session)
         instance = session.scalar(
             select(Instance).where(
-                Instance.image_id == image.id and Instance.entity_id == entity.id
+                and_(Instance.image_id == image.id, Instance.entity_id == entity.id)
             )
         )
         if not instance:
             return
         pixmap = QtGui.QPixmap(image.path)
-        print(instance.x, instance.y, instance.width, instance.height, pixmap.size())
-        self.pixmapItem = self.scene().addPixmap(
-            pixmap.copy(
-                instance.x,
-                instance.y,
-                instance.width,
-                instance.height,
-            )
+        self.scene().addPixmap(pixmap)
+        pen = QtGui.QPen("#ffffff")
+        pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
+        pen.setWidth(int((pixmap.width() + pixmap.height()) / 500))
+        self.scene().addRect(
+            instance.x,
+            instance.y,
+            instance.width,
+            instance.height,
+            pen,
         )
-        self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+        self.fitInView(
+            instance.x,
+            instance.y,
+            instance.width,
+            instance.height,
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+        )
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.pixmapItem:
-            self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
-
-    @staticmethod
-    def getpen(color: str) -> QtGui.QPen:
-        pen = QtGui.QPen(color)
-        pen.setWidth(10)
-        return pen
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        if event.modifiers() == QtCore.Qt.KeyboardModifier.ShiftModifier:
+            factor = 1 + event.angleDelta().y() / 1000
+            self.scale(factor, factor)
+        else:
+            super().wheelEvent(event)
