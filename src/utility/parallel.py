@@ -1,3 +1,4 @@
+from typing_extensions import Any
 import typing
 
 from PySide6 import QtCore
@@ -11,7 +12,9 @@ class Async(QtCore.QThread):
     the main thread with `QtWidgets.QApplication.instance().thread()`.
     """
 
-    def __init__(self, name: str, fn: typing.Callable[[], None]):
+    result = QtCore.Signal(Any)
+
+    def __init__(self, name: str, fn: typing.Callable[[], Any]):
         super().__init__()
         self.setObjectName(name)
         self.fn = fn
@@ -20,7 +23,7 @@ class Async(QtCore.QThread):
 
     @QtCore.Slot()
     def run(self):
-        self.fn()
+        self.result.emit(self.fn())
 
     @staticmethod
     def progress(value: float):

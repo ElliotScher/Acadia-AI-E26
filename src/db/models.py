@@ -23,7 +23,6 @@ from sqlalchemy.orm import (
 )
 from datetime import datetime, timedelta, time
 import os
-from pathlib import Path
 import csv
 
 from detection.yolo import process_single_image, CLASS_ID_MAPPING
@@ -62,33 +61,6 @@ class Image(Base):
         return session.scalars(
             select(Entity).join(Instance).where(Instance.image_id == self.id)
         ).all()
-
-    def analyze(self, session: Session, model, conf, classes):
-        if self.analyzed:
-            for instance in self.get_instances(session):
-                session.delete(instance)
-
-        detections = process_single_image(
-            model, Path(self.path).resolve(), Path(), Path(), False, conf, classes
-        )
-
-        for detection in detections:
-            entity = Entity()
-            instance = Instance(
-                image=self,
-                entity=entity,
-                x=detection.box[0],
-                y=detection.box[1],
-                width=detection.box[2] - detection.box[0],
-                height=detection.box[3] - detection.box[1],
-                type_id=detection.cls_id,
-                confidence=detection.conf,
-            )
-            session.add_all((entity, instance))
-
-        self.analyzed = True
-        session.add(self)
-        session.commit()
 
     @staticmethod
     def import_from_dir(session: Session, dir: str):

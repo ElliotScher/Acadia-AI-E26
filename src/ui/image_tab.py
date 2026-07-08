@@ -5,7 +5,7 @@ from sqlalchemy import select, Select, func, union
 from sqlalchemy.orm import Session
 from datetime import datetime, time
 
-from detection.yolo import load_model, CLASS_ID_MAPPING
+from detection.yolo import CLASS_ID_MAPPING
 from db.models import Image, Instance
 from filters import Filters
 from filters.image import (
@@ -176,18 +176,15 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "session"):
             return
 
-        if not hasattr(self, "yoloModel"):
-            self.yoloModel = load_model("yolo26s.pt")
-
         images: list[Image] = []
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
-            images = self.session.scalars(
-                select(Image).order_by(Image.datetime).distinct()
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
             )
 
-        dialog = AnalyzeDialog(self.session, self.yoloModel, images)
+        dialog = AnalyzeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
