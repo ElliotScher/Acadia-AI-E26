@@ -1,5 +1,3 @@
-import copy
-from requests import session
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
