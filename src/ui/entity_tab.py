@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from detection.yolo import CLASS_ID_MAPPING
 from db.models import Entity, Instance
 from filters import Filters
+from filters.entity import EntityDateFilter, EntityTimeFilter, EntityTypeFilter
 
 colors = (
     "#00ff00",
@@ -40,7 +41,7 @@ class EntitiesTab(QtWidgets.QWidget):
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
-        self.filters = Filters(())
+        self.filters = Filters((EntityDateFilter, EntityTimeFilter, EntityTypeFilter))
         gallerySideLayout.addWidget(self.filters)
         self.filters.changed.connect(self.refreshGallery)
         self.count = QtWidgets.QLabel("0 images")
@@ -78,7 +79,16 @@ class EntitiesTab(QtWidgets.QWidget):
         self.gallery.setModel(self.galleryModel)
         self.gallery.selectionModel().selectionChanged.connect(self.newselection)
 
-        self.galleryModel.results = [x.id for x in self.session.scalars(select(Entity)).all()]
+        subquery = self.filters.makeFilter(Entity.id).subquery()
+        query = (
+            select(subquery)
+            .select_from(subquery)
+            .order_by(subquery.c.id)
+            .distinct()
+        )
+        self.galleryModel.results = list(
+            map(lambda d: d[0], self.session.execute(query).unique().all())
+        )
         self.count.setText(str(len(self.galleryModel.results)) + " images")
 
 class EntityGallery(QtWidgets.QListView):
@@ -109,7 +119,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     results: list[int]
     thumbnails: dict[int, QtGui.QIcon]
     size: int = 0
-    filters: "Filters"
+    filters: Filters
 
     def __init__(self, session: Session):
         self.session = session

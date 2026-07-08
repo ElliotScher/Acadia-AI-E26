@@ -12,22 +12,22 @@ class Filters(QtWidgets.QWidget):
         super().__init__(*args, **kwargs)
 
         self.filterTypes = filterTypes
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setVerticalSizeConstraint(
+        self.thisLayout = QtWidgets.QVBoxLayout(self)
+        self.thisLayout.setVerticalSizeConstraint(
             QtWidgets.QLayout.SizeConstraint.SetFixedSize
         )
-        self.layout.setContentsMargins(2, 2, 2, 2)
+        self.thisLayout.setContentsMargins(2, 2, 2, 2)
         firstFilterRow = FilterRow(self.filterTypes, first=True)
-        self.layout.addWidget(firstFilterRow)
-        self.layout.setAlignment(firstFilterRow, QtCore.Qt.AlignmentFlag.AlignTop)
+        self.thisLayout.addWidget(firstFilterRow)
+        self.thisLayout.setAlignment(firstFilterRow, QtCore.Qt.AlignmentFlag.AlignTop)
         firstFilterRow.newFilterRow.connect(self.newFilterRow)
         firstFilterRow.changed.connect(self.changed)
 
     @QtCore.Slot()
     def newFilterRow(self):
         newFilterRow = FilterRow(self.filterTypes)
-        self.layout.addWidget(newFilterRow)
-        self.layout.setAlignment(newFilterRow, QtCore.Qt.AlignmentFlag.AlignTop)
+        self.thisLayout.addWidget(newFilterRow)
+        self.thisLayout.setAlignment(newFilterRow, QtCore.Qt.AlignmentFlag.AlignTop)
         newFilterRow.changed.connect(self.changed)
         self.changed.emit()
 
@@ -94,7 +94,7 @@ class FilterRow(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def removeFilterRow(self):
-        self.parentWidget().layout.removeWidget(self)
+        self.parentWidget().layout().removeWidget(self)
         self.deleteLater()
         self.deleted = True
         self.changed.emit()
@@ -137,23 +137,24 @@ class Filter(QtWidgets.QGroupBox):
     name: str
     deleted: bool
     changed = QtCore.Signal()
+    thisLayout: QtWidgets.QHBoxLayout
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.deleted = False
 
-        self.layout = QtWidgets.QHBoxLayout(self)
-        self.layout.setSpacing(5)
-        self.layout.setContentsMargins(2, 2, 2, 2)
-        self.layout.setHorizontalSizeConstraint(
+        self.thisLayout = QtWidgets.QHBoxLayout(self)
+        self.thisLayout.setSpacing(5)
+        self.thisLayout.setContentsMargins(2, 2, 2, 2)
+        self.thisLayout.setHorizontalSizeConstraint(
             QtWidgets.QLayout.SizeConstraint.SetFixedSize
         )
 
         self.deleteFilterButton = QtWidgets.QPushButton("-")
         self.deleteFilterButton.setMaximumWidth(25)
         self.deleteFilterButton.pressed.connect(self.deleteFilter)
-        self.layout.addWidget(self.deleteFilterButton)
+        self.thisLayout.addWidget(self.deleteFilterButton)
 
     @QtCore.Slot()
     def deleteFilter(self):
@@ -172,15 +173,15 @@ class TimeFilter(Filter):
         self.startTime = QtWidgets.QTimeEdit()
         self.startTime.setDisplayFormat("hh:mm:ss")
         self.startTime.timeChanged.connect(self.changed)
-        self.layout.insertWidget(0, self.startTime)
+        self.thisLayout.insertWidget(0, self.startTime)
 
-        self.layout.insertWidget(1, QtWidgets.QLabel("-"))
+        self.thisLayout.insertWidget(1, QtWidgets.QLabel("-"))
 
         self.endTime = QtWidgets.QTimeEdit()
         self.endTime.setDisplayFormat("hh:mm:ss")
         self.endTime.setTime(QtCore.QTime(23, 59, 59))
         self.endTime.timeChanged.connect(self.changed)
-        self.layout.insertWidget(2, self.endTime)
+        self.thisLayout.insertWidget(2, self.endTime)
 
 
 class DateFilter(Filter):
@@ -194,9 +195,9 @@ class DateFilter(Filter):
         self.startDate.setCalendarPopup(True)
         self.startDate.setMaximumWidth(120)
         self.startDate.dateChanged.connect(self.changed)
-        self.layout.insertWidget(0, self.startDate)
+        self.thisLayout.insertWidget(0, self.startDate)
 
-        self.layout.insertWidget(1, QtWidgets.QLabel("-"))
+        self.thisLayout.insertWidget(1, QtWidgets.QLabel("-"))
 
         self.endDate = QtWidgets.QDateEdit()
         self.endDate.setDisplayFormat("yyyy-MM-dd")
@@ -206,4 +207,4 @@ class DateFilter(Filter):
             QtCore.QDate(datetime.now().year, datetime.now().month, datetime.now().day)
         )
         self.endDate.dateChanged.connect(self.changed)
-        self.layout.insertWidget(2, self.endDate)
+        self.thisLayout.insertWidget(2, self.endDate)
