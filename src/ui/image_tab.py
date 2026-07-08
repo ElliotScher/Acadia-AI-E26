@@ -59,7 +59,7 @@ class GalleryModel(QtCore.QAbstractListModel):
     def getById(self, id: int) -> Image:
         return self.session.scalar(
             select(Image).where(Image.id == id)
-        )  # ty:ignore[invalid-return-type]
+        )  # type: ignore[invalid-return-type]
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0

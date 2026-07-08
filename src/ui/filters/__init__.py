@@ -36,7 +36,7 @@ class Filters(QtWidgets.QWidget):
     def makeFilter(self, *args):
         selects = []
         child: Filter
-        for child in self.children():  # ty:ignore[invalid-assignment]
+        for child in self.children():  # type: ignore[invalid-assignment]
             if hasattr(child, "makeFilter") and not child.deleted:
                 selects.append(child.makeFilter(select(*args)))
         if len(selects) == 0:
@@ -96,7 +96,7 @@ class FilterRow(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def removeFilterRow(self):
-        self.parentWidget().thisLayout.removeWidget(  # ty:ignore[unresolved-attribute]
+        self.parentWidget().thisLayout.removeWidget(  # type: ignore[unresolved-attribute]
             self
         )
         self.deleteLater()
@@ -128,7 +128,7 @@ class FilterRow(QtWidgets.QGroupBox):
     def makeFilter(self, query: Select):
         selects: list[Select] = []
         child: Filter
-        for child in self.filterList.children():  # ty:ignore[invalid-assignment]
+        for child in self.filterList.children():  # type: ignore[invalid-assignment]
             if hasattr(child, "makeFilter") and not child.deleted:
                 selects.append(child.makeFilter(query))
         if len(selects) == 0:
@@ -162,7 +162,7 @@ class Filter(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def deleteFilter(self):
-        self.parentWidget().layout().removeWidget(  # ty:ignore[unresolved-attribute]
+        self.parentWidget().layout().removeWidget(  # type: ignore[unresolved-attribute]
             self
         )
         self.deleteLater()
