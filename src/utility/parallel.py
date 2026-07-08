@@ -1,3 +1,4 @@
+import functools
 from typing_extensions import Any
 import typing
 
@@ -76,7 +77,10 @@ class _T(QtCore.QObject):
             if progress == 0:
                 return f"Waiting on {thread.objectName()}..."
             return f"Waiting on {thread.objectName()} ({progress:.2%})..."
-        return f"Waiting on {len(self.threads)} tasks..."
+        progress = functools.reduce(lambda v, t : t[1] + v , list(self.threads.items()), 0) / len(self.threads)
+        if progress == 0:
+            return f"Waiting on {len(self.threads)} tasks..."
+        return f"Waiting on {len(self.threads)} tasks ({progress:.2%})..."
 
 
 class ThreadTracker(_T):

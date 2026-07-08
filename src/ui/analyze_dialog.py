@@ -100,7 +100,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         for i in range(threadCount):
             images = self.images[(i * imagesPerThread) : ((i + 1) * imagesPerThread)]
             thread = upl.Async(
-                "Analysis " + str(i),
+                "Analysis " + str(i + 1),
                 functools.partial(self.analyzeThread, images, self.minConfidence.value(), targetClasses),
             )
             thread.result.connect(self.finishAnalysis)
@@ -126,6 +126,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 minConfidence,
                 targetClasses,
             )
+            upl.Async.progress(len(results) / len(images))
 
         return results
 
