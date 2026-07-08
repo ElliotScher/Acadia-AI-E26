@@ -18,4 +18,5 @@ dependencies = [
     "pytest>=9.1.1",
     "pytesseract>=0.3.13",
     "pyside6>=6.11.1",
+    "imagehash>=4.3.2",
 ]
