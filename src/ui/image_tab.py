@@ -266,11 +266,21 @@ class ImageInfo(QtWidgets.QGroupBox):
         instancesText = ""
         for i in range(len(instances)):
             instance = instances[i]
+            directions = []
+            if instance.direction_fb == 1:
+                directions.append("front")
+            elif instance.direction_fb == -1:
+                directions.append("back")
+            if instance.direction_lr == 1:
+                directions.append("right")
+            elif instance.direction_lr == -1:
+                directions.append("left")
             instancesText += (
                 '<font color="'
                 + colors[i % len(colors)]
                 + '">'
                 + CLASS_ID_MAPPING[instance.type_id].title()
+                + (" (" + ", ".join(directions) + ")" if len(directions) else "")
                 + " "
                 + str(round(instance.confidence * 10000) / 100)
                 + "% confidence</font><br>"

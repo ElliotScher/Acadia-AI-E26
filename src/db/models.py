@@ -175,7 +175,6 @@ class Entity(Base):
     __tablename__ = "entity"
     id: Mapped[int] = mapped_column(primary_key=True)
     speed: Mapped[float] = mapped_column(Float(), nullable=True)
-    direction: Mapped[int] = mapped_column(Integer(), nullable=True)
     ebike: Mapped[bool] = mapped_column(Boolean(), nullable=True)
     cluster: Mapped[int] = mapped_column(Integer(), nullable=True)
 
@@ -247,6 +246,8 @@ class Instance(Base):
     width: Mapped[int] = mapped_column(Integer(), nullable=False)
     height: Mapped[int] = mapped_column(Integer(), nullable=False)
     confidence: Mapped[float] = mapped_column(Float(), nullable=False)
+    direction_lr: Mapped[int] = mapped_column(Integer(), nullable=True)
+    direction_fb: Mapped[int] = mapped_column(Integer(), nullable=True)
 
     image: Mapped[Image] = relationship(back_populates="instances")
     entity: Mapped[Entity] = relationship(back_populates="instances")
@@ -324,3 +325,10 @@ SELECT confidence FROM instance LIMIT 1
 """))
     except:
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN confidence FLOAT"))
+    try:
+        connection.execute(DDL("""
+SELECT direction_lr FROM instance LIMIT 1
+"""))
+    except:
+        connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_lr INTEGER"))
+        connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_fb INTEGER"))

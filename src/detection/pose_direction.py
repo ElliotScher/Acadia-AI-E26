@@ -13,7 +13,7 @@ from threading import Thread
 import torch
 from tqdm import tqdm
 
-from yolo import TARGET_CLASSES, load_model
+from detection.yolo import TARGET_CLASSES, load_model
 
 left_points = (1, 3, 5, 7, 9, 11, 13, 15)
 right_points = (2, 4, 6, 8, 10, 12, 14, 16)
