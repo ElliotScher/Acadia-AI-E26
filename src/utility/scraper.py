@@ -35,7 +35,9 @@ class Photo:
         if not os.path.exists(dirname):
             os.makedirs(os.path.dirname(destination), exist_ok=True)
         elif not os.path.isdir(dirname):
-            raise FileExistsError("Destination exists and is not a directory: " + dirname)
+            raise FileExistsError(
+                "Destination exists and is not a directory: " + dirname
+            )
         with open(destination, "wb") as file:
             response = requests.get(f"https://{rinfo['host']}/{rinfo['path']}")
             file.write(response.content)
@@ -191,9 +193,7 @@ def main():
     # login and fetch cameras
     if len(args.args) > 0 or args.list:
         user = os.getenv("SPYPOINT_USERNAME") if not args.user else args.user
-        passwd = (
-            os.getenv("SPYPOINT_PASSWORD") if not args.password else args.password
-        )
+        passwd = os.getenv("SPYPOINT_PASSWORD") if not args.password else args.password
         if not user:
             print("Missing username.", file=sys.stderr)
         if not passwd:
