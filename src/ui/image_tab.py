@@ -5,7 +5,7 @@ from sqlalchemy import select, Select, func, union
 from sqlalchemy.orm import Session
 from datetime import datetime, time
 
-from detection.yolo import load_model, CLASS_ID_MAPPING
+from detection.yolo import CLASS_ID_MAPPING
 from db.models import Image, Instance
 from filters import Filters
 from filters.image import (
@@ -176,18 +176,15 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "session"):
             return
 
-        if not hasattr(self, "yoloModel"):
-            self.yoloModel = load_model("yolo26s.pt")
-
-        images = []
+        images: list[Image] = []
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
-            images = self.session.scalars(
-                select(Image).order_by(Image.datetime).distinct()
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
             )
 
-        dialog = AnalyzeDialog(self.session, self.yoloModel, images)
+        dialog = AnalyzeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
@@ -305,22 +302,22 @@ class ImageInfo(QtWidgets.QGroupBox):
 class ImageViewer(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.scene = QtWidgets.QGraphicsScene(self)
-        self.setScene(self.scene)
+        self._scene = QtWidgets.QGraphicsScene(self)
+        self.setScene(self._scene)
         self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
     def set(self, image: Image, instances: list[Instance]):
-        self.scene.clear()
+        self._scene.clear()
 
         pixmap = QtGui.QPixmap(image.path)
         self.resize(pixmap.width(), pixmap.height())
-        self.pixmapItem = self.scene.addPixmap(QtGui.QPixmap())
+        self.pixmapItem = self._scene.addPixmap(QtGui.QPixmap())
         self.pixmapItem.setPixmap(pixmap)
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
         for i in range(len(instances)):
             instance = instances[i]
-            self.scene.addRect(
+            self._scene.addRect(
                 instance.x,
                 instance.y,
                 instance.width,
