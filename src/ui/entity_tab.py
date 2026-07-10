@@ -1,3 +1,4 @@
+from sympy.integrals.meijerint import z
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -55,14 +56,12 @@ class EntitiesTab(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def newselection(self):
-        selection: list[Entity] = [
-            x
-            for x in [
-                self.galleryModel.getByIndex(x) for x in self.gallery.selectedIndexes()
-            ]
-            if x is not None
-        ]
-        self.entityInfo.showinfo(selection, self.session)
+        selection = self.gallery.selectedIndexes()
+        entity = None
+        if len(selection) > 0:
+            entity = self.galleryModel.getByIndex(selection[0])
+        if entity:
+            self.entityInfo.showEntity(entity, self.session)
 
     @QtCore.Slot()
     def setsession(self, session: Session):
@@ -99,7 +98,7 @@ class EntityGallery(QtWidgets.QListView):
         self.setViewMode(self.ViewMode.IconMode)
         self.setVerticalScrollMode(self.ScrollMode.ScrollPerPixel)
         self.setResizeMode(self.ResizeMode.Adjust)
-        self.setSelectionMode(self.SelectionMode.MultiSelection)
+        self.setSelectionMode(self.SelectionMode.SingleSelection)
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
@@ -200,53 +199,56 @@ class EntityInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.info)
         self.info.hide()
 
-    def showinfo(self, entities: list[Entity], session: Session):
-        if len(entities) == 1:
-            self.showone(entities[0], session)
+    def showEntity(self, entity: Entity, session: Session):
+        if entity:
+            self.showInfo(entity, session)
             self.viewer.show()
-        elif len(entities) > 1:
-            self.showmultiple(entities)
-            self.viewer.hide()
         else:
             self.info.hide()
             self.viewer.hide()
             self.placeholder.show()
 
-    def showone(self, entity: Entity, session: Session):
+    def showInfo(self, entity: Entity, session: Session):
         instances = entity.get_instances(session)
-        instancesText = ""
+        latest = entity.get_latest_image(session)
+        self.images.clear()
+        seen: dict[str, bool] = {}
         for i in range(len(instances)):
             instance = instances[i]
-            instancesText += (
-                '<font color="'
-                + colors[i % len(colors)]
-                + '">'
-                + CLASS_ID_MAPPING[instance.type_id].title()
-                + " "
-                + str(round(instance.confidence * 10000) / 100)
-                + "% confidence</font><br>"
+            if instance.image.path in seen:
+                continue
+            seen[instance.image.path] = True
+            c = instance.confidence
+            item = QtWidgets.QListWidgetItem(
+                QtGui.QIcon(instance.image.path),
+                f"{c:0.2%} at {instance.image.datetime.strftime('%Y-%m-%d %H:%M:%S')}",
             )
-
+            item.setForeground(
+                QtGui.QBrush(
+                    QtGui.QColor(
+                        int(30 * c + 255 * (1 - c)), int(255 * c + 30 * (1 - c)), 30
+                    )
+                )
+            )
+            self.images.addItem(item)
+            if instance.image_id == latest.id:
+                self.images.setSelection(
+                    QtCore.QRect(0, i, 1, 1),
+                    QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
+                )
+        if len(instances) > 0 and instances[0].type_id in CLASS_ID_MAPPING:
+            self.typeLabel.setText(CLASS_ID_MAPPING[instances[0].type_id].title() + " seen in:")
         self.viewer.set(entity, session)
-        self.imgcount.setText("1 selected.\n")
-        self.imginstances.setText(instancesText)
-        self.info.show()
-        self.placeholder.hide()
-
-    def showmultiple(self, entities: list[Entity]):
-        self.imgcount.setText(f"{len(entities)} selected.")
         self.info.show()
         self.placeholder.hide()
 
     def buildinfo(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        self.imgcount = QtWidgets.QLabel("THE ENTITY INFO BOX :)")
-        layout.addWidget(self.imgcount)
-        self.imgdate = QtWidgets.QLabel("A long time ago...")
-        layout.addWidget(self.imgdate)
-        self.imginstances = QtWidgets.QLabel()
-        layout.addWidget(self.imginstances)
+        self.typeLabel = QtWidgets.QLabel()
+        layout.addWidget(self.typeLabel)
+        self.images = QtWidgets.QListWidget()
+        layout.addWidget(self.images)
         return widget
 
 
