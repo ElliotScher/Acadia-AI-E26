@@ -48,7 +48,7 @@ class EntityTypeFilter(Filter):
         )
         self.typeFilter.addItem("Ebike")
         self.typeFilter.currentIndexChanged.connect(self.changed)
-        self.thisLayout.addWidget(self.typeFilter)
+        self.thisLayout.insertWidget(0, self.typeFilter)
 
     @QtCore.Slot()
     def makeFilter(self, query: Select) -> Select:

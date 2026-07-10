@@ -30,6 +30,7 @@ class Root(QtWidgets.QMainWindow):
         self.tabs.addTab(self.imageTab, "Images")
         self.tabs.addTab(self.entitiesTab, "Entities")
         layout.addWidget(self.tabs)
+        self.tabs.currentChanged.connect(self.tabChanged)
 
         self.buildMenu()
 
@@ -120,6 +121,12 @@ class Root(QtWidgets.QMainWindow):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
 
+    @QtCore.Slot()
+    def tabChanged(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.refreshGallery()
+        else:
+            self.entitiesTab.refreshGallery()
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])

@@ -44,14 +44,14 @@ class EntitiesTab(QtWidgets.QWidget):
         self.filters = Filters((EntityDateFilter, EntityTimeFilter, EntityTypeFilter))
         gallerySideLayout.addWidget(self.filters)
         self.filters.changed.connect(self.refreshGallery)
-        self.count = QtWidgets.QLabel("0 images")
+        self.count = QtWidgets.QLabel("0 entities")
         gallerySideLayout.addWidget(self.count)
         self.gallery = EntityGallery()
         gallerySideLayout.addWidget(self.gallery)
 
         layout.addWidget(gallerySide)
-        self.imageInfo = EntityInfo()
-        layout.addWidget(self.imageInfo)
+        self.entityInfo = EntityInfo()
+        layout.addWidget(self.entityInfo)
 
     @QtCore.Slot()
     def newselection(self):
@@ -62,7 +62,7 @@ class EntitiesTab(QtWidgets.QWidget):
             ]
             if x is not None
         ]
-        self.imageInfo.showinfo(selection, self.session)
+        self.entityInfo.showinfo(selection, self.session)
 
     @QtCore.Slot()
     def setsession(self, session: Session):
@@ -89,7 +89,7 @@ class EntitiesTab(QtWidgets.QWidget):
         self.galleryModel.results = list(
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
-        self.count.setText(str(len(self.galleryModel.results)) + " images")
+        self.count.setText(str(len(self.galleryModel.results)) + " entities")
 
 class EntityGallery(QtWidgets.QListView):
     def __init__(self):
@@ -182,7 +182,7 @@ class GalleryModel(QtCore.QAbstractListModel):
 class EntityInfo(QtWidgets.QGroupBox):
     def __init__(self):
         super().__init__()
-        self.setTitle("Image Info")
+        self.setTitle("Entity Info")
         self.setMinimumSize(400, 500)
         self.setMaximumWidth(400)
         layout = QtWidgets.QVBoxLayout(self)
@@ -200,12 +200,12 @@ class EntityInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.info)
         self.info.hide()
 
-    def showinfo(self, images: list[Entity], session: Session):
-        if len(images) == 1:
-            self.showone(images[0], session)
+    def showinfo(self, entities: list[Entity], session: Session):
+        if len(entities) == 1:
+            self.showone(entities[0], session)
             self.viewer.show()
-        elif len(images) > 1:
-            self.showmultiple(images)
+        elif len(entities) > 1:
+            self.showmultiple(entities)
             self.viewer.hide()
         else:
             self.info.hide()
@@ -233,15 +233,15 @@ class EntityInfo(QtWidgets.QGroupBox):
         self.info.show()
         self.placeholder.hide()
 
-    def showmultiple(self, images: list[Entity]):
-        self.imgcount.setText(f"{len(images)} selected.")
+    def showmultiple(self, entities: list[Entity]):
+        self.imgcount.setText(f"{len(entities)} selected.")
         self.info.show()
         self.placeholder.hide()
 
     def buildinfo(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        self.imgcount = QtWidgets.QLabel("THE IMAGE INFO BOX :)")
+        self.imgcount = QtWidgets.QLabel("THE ENTITY INFO BOX :)")
         layout.addWidget(self.imgcount)
         self.imgdate = QtWidgets.QLabel("A long time ago...")
         layout.addWidget(self.imgdate)
