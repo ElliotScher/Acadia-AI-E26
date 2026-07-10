@@ -25,6 +25,9 @@ from utility.geometryutils import Rectangle
 # COCO classes: 0=person, 2=car, 5=bus, 7=truck
 DEFAULT_TARGET_CLASSES = [0, 2, 5, 7]
 
+# --classes tokens that request license plate detection instead of a COCO class ID
+PLATE_CLASS_TOKENS = {"plate", "license_plate", "license-plate"}
+
 # Initialize Logger
 logger = logging.getLogger("yolo_video_detection")
 
@@ -82,6 +85,8 @@ def _frame_worker(
     classes_list: List[int],
     error_flag: threading.Event,
     device: str = "cpu",
+    plate_model_name: Optional[str] = None,
+    run_base_model: bool = True,
 ) -> None:
     """
     Worker thread that pulls frames from the queue, runs YOLO, and records detections.
@@ -97,15 +102,37 @@ def _frame_worker(
         classes_list (List[int]): COCO class filter list.
         error_flag (threading.Event): Error notification event.
         device (str): PyTorch device to run inference on.
+        plate_model_name (Optional[str]): Optional path to a separate YOLO model checkpoint
+            trained specifically for license plate detection. When provided, every frame is
+            additionally run through this model and any detections are recorded with the
+            label "license_plate". Defaults to None (license plate detection disabled).
+        run_base_model (bool): Whether to run the general-purpose COCO model at all. False
+            when the caller only requested license plate detection, so no COCO classes
+            (person/car/etc.) are detected or drawn. Defaults to True.
     """
-    try:
-        thread_model = YOLO(model_name)
-    except Exception as e:
-        logger.error(
-            "Failed to load YOLO model '%s' in worker thread: %s", model_name, e
-        )
-        error_flag.set()
-        return
+    thread_model = None
+    if run_base_model:
+        try:
+            thread_model = YOLO(model_name)
+        except Exception as e:
+            logger.error(
+                "Failed to load YOLO model '%s' in worker thread: %s", model_name, e
+            )
+            error_flag.set()
+            return
+
+    thread_plate_model = None
+    if plate_model_name:
+        try:
+            thread_plate_model = YOLO(plate_model_name)
+        except Exception as e:
+            logger.error(
+                "Failed to load license plate YOLO model '%s' in worker thread: %s",
+                plate_model_name,
+                e,
+            )
+            error_flag.set()
+            return
 
     while not error_flag.is_set():
         try:
@@ -120,39 +147,65 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            results = thread_model.predict(
-                source=frame,
-                conf=conf_threshold,
-                classes=classes_list,
-                verbose=False,
-                device=device,
-            )
-
             boxes_found = []
-            for r in results:
-                for box in r.boxes:
-                    cls = int(box.cls[0])
-                    label = thread_model.names[cls]
 
-                    # Standardize transport categories to 'car'
-                    if label in ["car", "bus", "truck"]:
-                        label = "car"
+            if thread_model is not None:
+                results = thread_model.predict(
+                    source=frame,
+                    conf=conf_threshold,
+                    classes=classes_list,
+                    verbose=False,
+                    device=device,
+                )
 
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    w = x2 - x1
-                    h = y2 - y1
+                for r in results:
+                    for box in r.boxes:
+                        cls = int(box.cls[0])
+                        label = thread_model.names[cls]
 
-                    # Apply crop region filter if provided
-                    if inclusion_region is not None:
-                        box_rect = Rectangle(x1, y1, w, h)
-                        if not Rectangle.bounding_box_intersects(
-                            box_rect, inclusion_region
-                        ):
-                            continue
+                        # Standardize transport categories to 'car'
+                        if label in ["car", "bus", "truck"]:
+                            label = "car"
 
-                    conf = float(box.conf[0])
-                    rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                    boxes_found.append((frame_idx, rect, label, conf))
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        w = x2 - x1
+                        h = y2 - y1
+
+                        # Apply crop region filter if provided
+                        if inclusion_region is not None:
+                            box_rect = Rectangle(x1, y1, w, h)
+                            if not Rectangle.bounding_box_intersects(
+                                box_rect, inclusion_region
+                            ):
+                                continue
+
+                        conf = float(box.conf[0])
+                        rect = Rectangle(x=x1, y=y1, w=w, h=h)
+                        boxes_found.append((frame_idx, rect, label, conf))
+
+            if thread_plate_model is not None:
+                plate_results = thread_plate_model.predict(
+                    source=frame,
+                    conf=conf_threshold,
+                    verbose=False,
+                    device=device,
+                )
+                for r in plate_results:
+                    for box in r.boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        w = x2 - x1
+                        h = y2 - y1
+
+                        if inclusion_region is not None:
+                            box_rect = Rectangle(x1, y1, w, h)
+                            if not Rectangle.bounding_box_intersects(
+                                box_rect, inclusion_region
+                            ):
+                                continue
+
+                        conf = float(box.conf[0])
+                        rect = Rectangle(x=x1, y=y1, w=w, h=h)
+                        boxes_found.append((frame_idx, rect, "license_plate", conf))
 
             if boxes_found:
                 with results_lock:
@@ -178,6 +231,8 @@ def process_videos(
     cores: int = 1,
     gpu_devices: Optional[List[str]] = None,
     use_gpu_decode: bool = False,
+    plate_model_name: Optional[str] = None,
+    run_base_model: bool = True,
 ) -> List[DetectionResult]:
     """
     Processes a list of video paths using YOLO and extracts detection boxes.
@@ -193,6 +248,10 @@ def process_videos(
         cores (int): Number of worker threads to spawn.
         gpu_devices (Optional[List[str]]): List of GPU device strings to distribute workers across.
         use_gpu_decode (bool): Whether to attempt GPU hardware-accelerated video decoding.
+        plate_model_name (Optional[str]): Optional path to a separate YOLO model checkpoint
+            trained specifically for license plate detection. When provided, detections from
+            this model are included in the results labeled "license_plate". Defaults to None.
+        run_base_model (bool): Whether to run the general-purpose COCO model at all. Defaults to True.
 
     Returns:
         List[DetectionResult]: List of detection results per video.
@@ -232,6 +291,8 @@ def process_videos(
                 classes_list,
                 error_flag,
                 device,
+                plate_model_name,
+                run_base_model,
             ),
         )
         t.daemon = True
@@ -404,7 +465,9 @@ def save_annotated_videos(
                 break
 
             if frame_idx in boxes_by_frame:
-                # Draw rectangles on the frame
+                # Draw rectangles on the frame - every detected class (including
+                # license plates) is drawn the same way, since only the classes
+                # actually requested via --classes ever appear here.
                 for rect, label, conf in boxes_by_frame[frame_idx]:
                     cv2.rectangle(
                         frame,
@@ -472,13 +535,26 @@ def main() -> None:
         "--classes",
         type=str,
         default=None,
-        help="Comma-separated list of COCO category IDs to detect (e.g., '0,2,5,7').",
+        help="Comma-separated list of classes to detect: COCO category IDs (e.g. "
+        "'0,2,5,7') and/or the special value 'plate' for license plates (requires "
+        "--plate-model). Only the classes listed here are detected/drawn - e.g. "
+        "'--classes plate' alone detects license plates only, with no COCO "
+        "detection running at all. Defaults to person/car/bus/truck if omitted.",
     )
     parser.add_argument(
         "--inclusion-region",
         type=str,
         default=None,
         help="Inclusion region as 'x,y,w,h' in pixels (default: None).",
+    )
+    parser.add_argument(
+        "--plate-model",
+        type=str,
+        default=None,
+        help="Path to a YOLO model checkpoint trained specifically for license plate "
+        "detection. Required when 'plate' is included in --classes; ultralytics only "
+        "auto-downloads its own general-purpose weights, so a plate-specific "
+        "model must be supplied.",
     )
     parser.add_argument(
         "-r",
@@ -525,16 +601,46 @@ def main() -> None:
     else:
         logger.info("GPU acceleration disabled or not found. Using CPU.")
 
+    # --classes selects everything this run detects: COCO category IDs run through
+    # the general-purpose model, and the special 'plate' token runs the plate
+    # model (via --plate-model). If --classes is omitted entirely, the old
+    # default (person/car/bus/truck, no plates) is preserved. If --classes is
+    # given and only contains 'plate', the COCO model doesn't run at all, so
+    # nothing but license plates is detected or drawn.
     target_classes = DEFAULT_TARGET_CLASSES
+    plate_requested = False
+    run_base_model = True
+
     if args.classes:
+        coco_tokens = []
+        for raw_token in args.classes.split(","):
+            token = raw_token.strip()
+            if not token:
+                continue
+            if token.lower() in PLATE_CLASS_TOKENS:
+                plate_requested = True
+            else:
+                coco_tokens.append(token)
+
         try:
-            target_classes = [int(x.strip()) for x in args.classes.split(",")]
+            target_classes = [int(t) for t in coco_tokens]
         except ValueError:
             logger.error(
-                "Invalid class list format: '%s'. Expected comma-separated integers.",
+                "Invalid class list format: '%s'. Expected comma-separated COCO "
+                "category IDs and/or 'plate'.",
                 args.classes,
             )
             sys.exit(1)
+
+        run_base_model = len(target_classes) > 0
+
+    if plate_requested and not args.plate_model:
+        logger.error(
+            "The 'plate' class requires --plate-model to specify a license-plate-"
+            "detection YOLO checkpoint."
+        )
+        sys.exit(1)
+    plate_model_name = args.plate_model if plate_requested else None
 
     inclusion_region = None
     if args.inclusion_region:
@@ -556,19 +662,23 @@ def main() -> None:
             sys.exit(1)
 
     total_counts: Dict[str, int] = {}
-    try:
-        model = YOLO(args.model)
-        for cls in target_classes:
-            if cls in model.names:
-                label = model.names[cls]
-                if label in ["car", "bus", "truck"]:
-                    label = "car"
-                total_counts[label] = 0
-            else:
-                logger.warning("Class ID %d not found in model names.", cls)
-    except Exception as e:
-        logger.error("Error loading model '%s': %s", args.model, e)
-        sys.exit(1)
+    if run_base_model:
+        try:
+            model = YOLO(args.model)
+            for cls in target_classes:
+                if cls in model.names:
+                    label = model.names[cls]
+                    if label in ["car", "bus", "truck"]:
+                        label = "car"
+                    total_counts[label] = 0
+                else:
+                    logger.warning("Class ID %d not found in model names.", cls)
+        except Exception as e:
+            logger.error("Error loading model '%s': %s", args.model, e)
+            sys.exit(1)
+
+    if plate_model_name:
+        total_counts["license_plate"] = 0
 
     # Find videos
     video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
@@ -609,6 +719,8 @@ def main() -> None:
         cores=thread_count,
         gpu_devices=gpu_devices,
         use_gpu_decode=use_gpu_decode,
+        plate_model_name=plate_model_name,
+        run_base_model=run_base_model,
     )
 
     progress_bar.close()
@@ -659,6 +771,7 @@ def main() -> None:
                 "model_weights": args.model,
                 "confidence_threshold": args.conf,
                 "target_classes": target_classes,
+                "plate_model_weights": plate_model_name,
                 "total_videos_processed": len(all_videos),
                 "generated_at": datetime.datetime.now().isoformat(),
             },

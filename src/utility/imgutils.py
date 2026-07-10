@@ -1,10 +1,99 @@
 import datetime
+import json
 import re
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 import cv2
 import numpy as np
+
+# Sidecar filename written by video_plateextractor.py next to its cropped plate
+# images, mapping each crop back to a timestamp resolved from its source frame
+# before cropping (a tight plate crop no longer contains the burned-in on-screen
+# timestamp text get_timestamp's OCR step relies on). Shared here so
+# video_plateextractor.py (writer) and plate_dwellprofiler.py (reader) agree on
+# the same filename without duplicating the constant.
+PLATE_MANIFEST_FILENAME = "plate_manifest.json"
+
+# Bounds an OCR-read year must fall within to be trusted. Tesseract occasionally
+# misreads a single digit of the on-screen date (e.g. "2026" -> "5026"), which
+# would otherwise produce a wildly implausible timestamp far in the past/future.
+_MIN_PLAUSIBLE_OCR_YEAR = 2000
+_MAX_PLAUSIBLE_OCR_YEAR = 2099
+
+
+def _plausible_ocr_year(year: int) -> int:
+    """
+    Returns `year` unchanged if it falls within a plausible range, otherwise
+    substitutes the current year.
+
+    A single misread digit in the on-screen date's year (e.g. "2026" -> "5026")
+    otherwise corrupts an entire timestamp even though the rest of the OCR'd
+    date/time is trustworthy, so the year is corrected rather than discarding
+    the whole reading.
+
+    Args:
+        year (int): The OCR-parsed year value.
+
+    Returns:
+        int: `year` if plausible, otherwise the current year.
+    """
+    if _MIN_PLAUSIBLE_OCR_YEAR <= year <= _MAX_PLAUSIBLE_OCR_YEAR:
+        return year
+    return datetime.datetime.now().year
+
+
+def _parse_timestamp_from_ocr_text(text: str) -> Optional[float]:
+    """
+    Searches OCR'd text for a date/time pattern and returns it as an epoch timestamp.
+
+    Tries, in order: YYYY-MM-DD HH:MM:SS (or YYYY/MM/DD), MM/DD/YYYY or DD/MM/YYYY
+    HH:MM:SS, and a bare HH:MM:SS fallback (returned as raw seconds-since-midnight,
+    not a real epoch time, since no date is available).
+
+    Args:
+        text (str): Raw text returned by pytesseract for a single OCR attempt.
+
+    Returns:
+        Optional[float]: The parsed timestamp, or None if no pattern matched.
+    """
+    # 1. YYYY-MM-DD HH:MM:SS (or YYYY/MM/DD)
+    pattern1 = r"(\d{4})[-/](\d{2})[-/](\d{2})\s*(\d{2})[:\.](\d{2})[:\.](\d{2})"
+    match1 = re.search(pattern1, text)
+    if match1:
+        year, month, day, hour, minute, second = map(int, match1.groups())
+        year = _plausible_ocr_year(year)
+        try:
+            return datetime.datetime(year, month, day, hour, minute, second).timestamp()
+        except ValueError:
+            pass
+
+    # 2. MM/DD/YYYY HH:MM:SS or DD/MM/YYYY HH:MM:SS
+    pattern2 = r"(\d{2})[-/](\d{2})[-/](\d{4})\s*(\d{2})[:\.](\d{2})[:\.](\d{2})"
+    match2 = re.search(pattern2, text)
+    if match2:
+        val1, val2, year, hour, minute, second = map(int, match2.groups())
+        year = _plausible_ocr_year(year)
+        # Try MM/DD/YYYY first
+        try:
+            return datetime.datetime(year, val1, val2, hour, minute, second).timestamp()
+        except ValueError:
+            # Fall back to DD/MM/YYYY
+            try:
+                return datetime.datetime(
+                    year, val2, val1, hour, minute, second
+                ).timestamp()
+            except ValueError:
+                pass
+
+    # 3. Simple time fallback: HH:MM:SS
+    pattern3 = r"(\d{2})[:\.](\d{2})[:\.](\d{2})"
+    match3 = re.search(pattern3, text)
+    if match3:
+        hour, minute, second = map(int, match3.groups())
+        return float(hour * 3600 + minute * 60 + second)
+
+    return None
 
 
 def extract_timestamp_via_ocr(img_path: Path) -> Optional[float]:
@@ -31,7 +120,7 @@ def extract_timestamp_via_ocr(img_path: Path) -> Optional[float]:
 
     try:
         img = Image.open(img_path)
-        
+
         # If the image resolution is high (e.g., 4K), resize it down to 1920 width
         # to match Tesseract's expected font scale/DPI and dramatically improve OCR accuracy.
         if img.width > 1920:
@@ -39,54 +128,112 @@ def extract_timestamp_via_ocr(img_path: Path) -> Optional[float]:
             img = img.resize((1920, int(1920 * aspect)))
 
         # Preprocessing: convert to grayscale
-        gray = img.convert('L')
-        
+        gray = img.convert("L")
+
         # Crop ONLY the bottom 10% of the image as the time is always printed there
         w, h = img.size
         bottom_crop = gray.crop((0, int(h * 0.90), w, h))
-        # Try OCR with default PSM, then fallback to PSM 6
-        for config in [None, "--psm 6"]:
-            if config:
-                text = pytesseract.image_to_string(bottom_crop, config=config)
-            else:
-                text = pytesseract.image_to_string(bottom_crop)
-            
-            # Regex search for datetime patterns
-            # 1. YYYY-MM-DD HH:MM:SS (or YYYY/MM/DD)
-            pattern1 = r'(\d{4})[-/](\d{2})[-/](\d{2})\s*(\d{2})[:\.](\d{2})[:\.](\d{2})'
-            match1 = re.search(pattern1, text)
-            if match1:
-                year, month, day, hour, minute, second = map(int, match1.groups())
-                dt_obj = datetime.datetime(year, month, day, hour, minute, second)
-                return dt_obj.timestamp()
-                
-            # 2. MM/DD/YYYY HH:MM:SS or DD/MM/YYYY HH:MM:SS
-            pattern2 = r'(\d{2})[-/](\d{2})[-/](\d{4})\s*(\d{2})[:\.](\d{2})[:\.](\d{2})'
-            match2 = re.search(pattern2, text)
-            if match2:
-                val1, val2, year, hour, minute, second = map(int, match2.groups())
-                # Try MM/DD/YYYY first
-                try:
-                    dt_obj = datetime.datetime(year, val1, val2, hour, minute, second)
-                    return dt_obj.timestamp()
-                except ValueError:
-                    # Fall back to DD/MM/YYYY
-                    try:
-                        dt_obj = datetime.datetime(year, val2, val1, hour, minute, second)
-                        return dt_obj.timestamp()
-                    except ValueError:
-                        pass
-                        
-            # 3. Simple time fallback: HH:MM:SS
-            pattern3 = r'(\d{2})[:\.](\d{2})[:\.](\d{2})'
-            match3 = re.search(pattern3, text)
-            if match3:
-                hour, minute, second = map(int, match3.groups())
-                return float(hour * 3600 + minute * 60 + second)
-            
+
+        # Binarizing (thresholding to pure black-and-white) helps Tesseract read
+        # frames where it otherwise misses the on-screen date/time entirely, but
+        # it isn't strictly better on every frame - it can turn an already-clean
+        # read into a noisier one. So it's only tried as a fallback crop variant,
+        # after the original grayscale crop has failed at every config.
+        bottom_arr = np.array(bottom_crop)
+        binarized_crop = Image.fromarray((bottom_arr > 140).astype(np.uint8) * 255)
+
+        for crop in (bottom_crop, binarized_crop):
+            for config in [None, "--psm 6"]:
+                if config:
+                    text = pytesseract.image_to_string(crop, config=config)
+                else:
+                    text = pytesseract.image_to_string(crop)
+
+                ts = _parse_timestamp_from_ocr_text(text)
+                if ts is not None:
+                    return ts
+
     except Exception:
         # Gracefully ignore OCR errors
         pass
+    return None
+
+
+_PLATE_CHAR_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+
+def _normalize_plate_text(text: str) -> str:
+    """
+    Uppercases OCR'd plate text and strips everything but letters and digits.
+
+    Args:
+        text (str): Raw plate text returned by the plate OCR model.
+
+    Returns:
+        str: The normalized, alphanumeric-only plate text (may be empty).
+    """
+    return "".join(ch for ch in text.upper() if ch in _PLATE_CHAR_WHITELIST)
+
+
+_PLATE_OCR_MODEL_NAME = "cct-s-v2-global-model"
+_plate_recognizer = None
+
+
+def _get_plate_recognizer():
+    """
+    Lazily loads and caches the shared fast-plate-ocr LicensePlateRecognizer.
+
+    Loading it (including a one-time model download to a local cache on first
+    use) is too expensive to repeat for every plate crop, so it's loaded once
+    per process and reused.
+
+    Returns:
+        LicensePlateRecognizer: The cached recognizer instance.
+    """
+    global _plate_recognizer
+    if _plate_recognizer is None:
+        from fast_plate_ocr import LicensePlateRecognizer
+
+        _plate_recognizer = LicensePlateRecognizer(_PLATE_OCR_MODEL_NAME)
+    return _plate_recognizer
+
+
+def extract_plate_text_via_ocr(crop: np.ndarray, min_length: int = 3) -> Optional[str]:
+    """
+    Attempts to read a license plate's alphanumeric text from a BGR crop.
+
+    Uses fast-plate-ocr's purpose-trained plate recognition model rather than
+    generic document OCR (e.g. Tesseract) - real plates combine embossed
+    fonts, decorative state graphics, and (from a distant/handheld camera)
+    low source resolution, which generic OCR handles very poorly even after
+    upscaling; a model actually trained on plate crops reads them reliably.
+
+    Args:
+        crop (np.ndarray): OpenCV BGR crop of the plate region.
+        min_length (int): Minimum number of alphanumeric characters required for a
+            reading to be trusted. Shorter results are almost always noise from
+            an unreadable plate rather than a genuine (if short) plate. Defaults to 3.
+
+    Returns:
+        Optional[str]: The normalized (uppercase, alphanumeric-only) plate text, or
+            None if OCR failed to produce a plausible reading.
+    """
+    if crop is None or crop.size == 0:
+        return None
+
+    try:
+        recognizer = _get_plate_recognizer()
+        results = recognizer.run(crop)
+        if not results:
+            return None
+
+        plate_text = _normalize_plate_text(results[0].plate)
+        if len(plate_text) >= min_length:
+            return plate_text
+    except Exception:
+        # Gracefully ignore OCR errors
+        pass
+
     return None
 
 
@@ -239,3 +386,83 @@ def get_timestamp(img_path: Path) -> float:
         raise FileNotFoundError(f"Image file not found: {img_path}") from e
     except OSError as e:
         raise OSError(f"Failed to read metadata for {img_path}: {e}") from e
+
+
+def load_video_start_times(path: Union[str, Path]) -> List[datetime.datetime]:
+    """
+    Loads a user-supplied JSON file overriding video start timestamps, for
+    footage whose file mtime is unreliable (e.g. copied or re-encoded) and
+    that has no burned-in on-screen clock get_timestamp's OCR step could fall
+    back to instead.
+
+    The file is a plain JSON array with exactly one entry per video, given in
+    the same order the caller discovers/sorts its videos in (both
+    video_entityprofiler.py and video_plateextractor.py process videos sorted
+    by full path) - there's no filename keying, so the caller is responsible
+    for matching list position to video position and for checking the lengths
+    line up (see validate_video_start_times).
+
+    Args:
+        path (Union[str, Path]): Path to a JSON file containing an array of
+            start timestamps, each either a UNIX epoch number or an ISO 8601
+            string (e.g. "2026-07-08T14:30:00").
+
+    Returns:
+        List[datetime.datetime]: Each entry resolved to a datetime, in the
+            same order as the input JSON array.
+
+    Raises:
+        OSError: If the file can't be read.
+        ValueError: If the JSON isn't an array, or a value is neither a
+            number nor a parseable ISO 8601 string.
+    """
+    with open(path, "r") as f:
+        raw = json.load(f)
+
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"Expected a JSON array of start times in '{path}', got "
+            f"{type(raw).__name__}."
+        )
+
+    start_times: List[datetime.datetime] = []
+    for i, value in enumerate(raw):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            start_times.append(datetime.datetime.fromtimestamp(float(value)))
+        elif isinstance(value, str):
+            start_times.append(datetime.datetime.fromisoformat(value))
+        else:
+            raise ValueError(
+                f"Invalid start time at index {i}: {value!r}. Expected a "
+                "UNIX epoch number or an ISO 8601 datetime string."
+            )
+
+    return start_times
+
+
+def validate_video_start_times(
+    start_times: Optional[List[datetime.datetime]], video_count: int
+) -> None:
+    """
+    Checks that a loaded start-times list has exactly one entry per video,
+    since positions (not filenames) are what map each timestamp to a video.
+
+    Args:
+        start_times (Optional[List[datetime.datetime]]): Preloaded list from
+            load_video_start_times, or None if no override file was given.
+        video_count (int): Number of videos the caller found to process.
+
+    Raises:
+        ValueError: If start_times is given and its length doesn't match
+            video_count.
+    """
+    if start_times is None:
+        return
+
+    if len(start_times) != video_count:
+        raise ValueError(
+            f"--start-times provided {len(start_times)} timestamp(s) but "
+            f"{video_count} video(s) were found; there must be exactly one "
+            "timestamp per video, listed in the same sorted-by-path order "
+            "the videos are processed in."
+        )

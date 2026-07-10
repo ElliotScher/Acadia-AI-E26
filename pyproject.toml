@@ -17,7 +17,10 @@ dependencies = [
     "torch>=2.12.1",
     "pyside6>=6.11.1",
     "black>=26.5.1",
-    "pytesseract>=0.3.13"
+    "pytesseract>=0.3.13",
+    "fast-plate-ocr[onnx]>=1.1.0",
+    "mediapipe>=0.10.35",
+    "av>=17.1.0",
 ]
 
 [tool.pytest.ini_options]

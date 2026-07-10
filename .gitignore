@@ -63,5 +63,8 @@ build/
 # YOLO Models
 *.pt
 
+# MediaPipe Models
+*.task
+
 #.envrc
 .envrc

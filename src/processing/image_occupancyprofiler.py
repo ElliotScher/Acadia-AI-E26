@@ -1,9 +1,9 @@
 """
-Image Entity Profiler
+Image Occupancy Profiler
 
 A functional backend library and command-line tool to extract features from green bounding boxes
 (detected inside images) using a pre-trained ResNet-50 network and re-identify/track
-entities chronologically across images.
+entities chronologically across images to compute occupancy.
 """
 
 import argparse
@@ -26,10 +26,6 @@ class Direction(Enum):
     UNKNOWN = auto()
 
 
-class ProfilingMode(Enum):
-    DWELL = auto()
-    OCCUPANCY = auto()
-
 import cv2
 import numpy as np
 import torch
@@ -47,7 +43,31 @@ from src.utility.imgutils import (
 )
 
 # Initialize Logger
-logger = logging.getLogger("image_entityprofiler")
+logger = logging.getLogger("image_occupancyprofiler")
+
+
+class GeM(nn.Module):
+    """
+    Generalized-Mean (GeM) pooling layer.
+
+    Generalizes global average pooling (p=1) toward max pooling (p -> inf),
+    emphasizing the most salient spatial activations in the feature map. This
+    is a standard re-identification "bag of tricks" swap for the plain
+    average pool in a classification backbone, and produces embeddings that
+    are noticeably more discriminative for instance-level retrieval/matching
+    than vanilla GAP features, without requiring any re-id-specific training
+    or additional pretrained weights.
+    """
+
+    def __init__(self, p: float = 3.0, eps: float = 1e-6):
+        super().__init__()
+        self.p = p
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.clamp(min=self.eps).pow(self.p)
+        x = nn.functional.adaptive_avg_pool2d(x, 1)
+        return x.pow(1.0 / self.p)
 
 
 @dataclass
@@ -196,6 +216,11 @@ def load_feature_extractor(
         except Exception as e:
             logger.debug("Failed to set model.classifier to Identity: %s", e)
 
+    # Swap the plain global-average-pool for GeM pooling to sharpen the
+    # discriminative power of the embedding for instance re-identification
+    if hasattr(model, "avgpool"):
+        model.avgpool = GeM()
+
     model.to(device)
     model.eval()
 
@@ -313,6 +338,56 @@ def compute_similarities(
     return similarities
 
 
+def select_best_match(
+    similarities: Dict[int, float],
+    threshold: float = 0.75,
+    ratio_threshold: Optional[float] = 0.8,
+) -> Tuple[Optional[int], float]:
+    """
+    Selects the best-matching entity ID from a similarity dict, rejecting ambiguous matches.
+
+    A candidate must clear an absolute similarity `threshold`, and (when a second-best
+    candidate exists) must also pass a ratio test comparing its distance (1 - similarity)
+    against the second-best candidate's distance - analogous to Lowe's ratio test used for
+    SIFT keypoint matching. This rejects matches that merely clear the threshold but are not
+    clearly better than the next-closest competing entity, which a bare absolute threshold
+    would otherwise accept as a false positive whenever the gallery contains multiple
+    similar-looking entities.
+
+    Args:
+        similarities (Dict[int, float]): Mapping of candidate entity_id to similarity score.
+        threshold (float): Minimum absolute similarity threshold for a match. Defaults to 0.75.
+        ratio_threshold (Optional[float]): Maximum allowed ratio of best-to-second-best distance.
+            Lower is stricter. Set to None to disable the ratio test entirely. Defaults to 0.8.
+
+    Returns:
+        Tuple[Optional[int], float]: A tuple containing:
+            - Optional[int]: The matched entity ID, or None if no candidate qualifies.
+            - float: The best similarity score found (even if no candidate qualifies).
+    """
+    best_id = None
+    best_sim = -1.0
+    second_best_sim = -1.0
+    for ent_id, sim in similarities.items():
+        if sim > best_sim:
+            second_best_sim = best_sim
+            best_sim = sim
+            best_id = ent_id
+        elif sim > second_best_sim:
+            second_best_sim = sim
+
+    if best_id is None or best_sim < threshold:
+        return None, best_sim
+
+    if ratio_threshold is not None and second_best_sim > -1.0:
+        best_dist = max(1.0 - best_sim, 1e-6)
+        second_dist = max(1.0 - second_best_sim, 1e-6)
+        if best_dist / second_dist > ratio_threshold:
+            return None, best_sim
+
+    return best_id, best_sim
+
+
 def assign_entity_id(
     feat: np.ndarray,
     hsv_hist: Optional[np.ndarray],
@@ -322,6 +397,7 @@ def assign_entity_id(
     database: List[ProfileRecord],
     next_id: int,
     threshold: float = 0.75,
+    ratio_threshold: Optional[float] = 0.8,
 ) -> Tuple[int, float, bool]:
     """
     Finds the best matching entity ID or returns a brand new one if no match meets the threshold.
@@ -335,6 +411,8 @@ def assign_entity_id(
         database (List[ProfileRecord]): List of registered ProfileRecord objects.
         next_id (int): The next available integer entity ID.
         threshold (float): Minimum similarity threshold for a match. Defaults to 0.75.
+        ratio_threshold (Optional[float]): Maximum allowed ratio of best-to-second-best distance
+            used to reject ambiguous matches. Set to None to disable. Defaults to 0.8.
 
     Returns:
         Tuple[int, float, bool]: A tuple containing:
@@ -345,14 +423,9 @@ def assign_entity_id(
     similarities = compute_similarities(
         feat, hsv_hist, aspect_ratio, timestamp, img_name, database
     )
-    best_id = None
-    best_sim = -1.0
-    for ent_id, sim in similarities.items():
-        if sim > best_sim:
-            best_sim = sim
-            best_id = ent_id
+    best_id, best_sim = select_best_match(similarities, threshold, ratio_threshold)
 
-    if best_id is not None and best_sim >= threshold:
+    if best_id is not None:
         return best_id, best_sim, False
     return next_id, best_sim, True
 
@@ -427,6 +500,7 @@ def process_images_worker(
     model: nn.Module,
     device: torch.device,
     transform: Any,
+    flip: bool = False,
 ) -> None:
     """
     Worker function executed in parallel threads to perform detection and feature extraction on a chunk of images.
@@ -442,6 +516,10 @@ def process_images_worker(
         model (nn.Module): Feature extractor model instance shared across threads.
         device (torch.device): The device (CPU/GPU) on which the model is executed.
         transform (Any): Image preprocessing transforms pipeline.
+        flip (bool): If True, horizontally mirrors each crop before feature extraction. Used when a
+            single camera captures both directions of travel (e.g. a driveway), since a vehicle
+            exiting is physically the same side of the vehicle as when it entered, just moving the
+            opposite way on screen - a mirror image of its entry appearance. Defaults to False.
     """
     for img_path in img_paths:
         try:
@@ -454,11 +532,12 @@ def process_images_worker(
             boxes = select_primary_box(boxes)
             detections = []
 
-
             for box in boxes:
                 x, y, w, h = box
                 crop = img[y : y + h, x : x + w]
                 if crop.size > 0:
+                    if flip:
+                        crop = cv2.flip(crop, 1)
                     feat = extract_features(crop, model, device, transform)
                     ts = get_timestamp(img_path)
                     hsv_hist = get_hsv_hist(get_center_crop(crop, 0.12))
@@ -480,8 +559,6 @@ def process_images_worker(
             progress_bar.update(1)
 
 
-
-
 def determine_image_direction(img_path: Path) -> Direction:
     """
     Placeholder function to determine if a vehicle in the input image is going left or right.
@@ -496,11 +573,11 @@ def determine_image_direction(img_path: Path) -> Direction:
         return Direction.UNKNOWN
 
 
-
 def track_entities_in_directory(
     results_dict: Dict[Path, List[Dict[str, Any]]],
     image_paths: List[Path],
     threshold: float = 0.75,
+    ratio_threshold: Optional[float] = 0.8,
     max_gap: Optional[float] = None,
 ) -> Tuple[List[ProfileRecord], Dict[int, List[ProfileRecord]]]:
     """
@@ -528,7 +605,8 @@ def track_entities_in_directory(
             # Filter database by max_gap if specified
             if max_gap is not None and ts is not None:
                 valid_db = [
-                    r for r in database
+                    r
+                    for r in database
                     if r.timestamp is not None and abs(ts - r.timestamp) <= max_gap
                 ]
             else:
@@ -543,6 +621,7 @@ def track_entities_in_directory(
                 database=valid_db,
                 next_id=next_id,
                 threshold=threshold,
+                ratio_threshold=ratio_threshold,
             )
 
             if is_new:
@@ -566,100 +645,6 @@ def track_entities_in_directory(
         grouped[r.entity_id].append(r)
 
     return database, grouped
-
-
-def match_entry_exit_entities(
-    entry_entities: Dict[int, List[ProfileRecord]],
-    exit_entities: Dict[int, List[ProfileRecord]],
-    threshold: float = 0.75,
-) -> List[Dict[str, Any]]:
-    """
-    Matches entry entities to exit entities using deep feature and color/aspect ratio similarity.
-    Calculates dwell time as the difference between exit and entry timestamps.
-
-    An exit is only ever compared against entries whose timestamp is strictly
-    earlier (i.e. entered at a genuinely previous point in time) — an entry
-    happening at or after the exit can never be its match. Entries that never
-    match to any exit simply never appear in the returned list, so they are
-    naturally excluded from any downstream average dwell time calculation.
-
-    Args:
-        entry_entities (Dict[int, List[ProfileRecord]]): Entry entities grouped by entity ID.
-        exit_entities (Dict[int, List[ProfileRecord]]): Exit entities grouped by entity ID.
-        threshold (float): Minimum similarity threshold for matching. Defaults to 0.75.
-
-    Returns:
-        List[Dict[str, Any]]: List of matching results containing entry/exit IDs,
-            similarity, and dwell time. Only entries that were successfully
-            matched to an exit are included.
-    """
-    matches = []
-    matched_entry_ids = set()
-
-    sorted_exit_ids = sorted(
-        exit_entities.keys(),
-        key=lambda eid: max(r.timestamp for r in exit_entities[eid] if r.timestamp is not None)
-        if any(r.timestamp is not None for r in exit_entities[eid]) else 0.0
-    )
-
-    for exit_id in sorted_exit_ids:
-        exit_records = exit_entities[exit_id]
-        exit_ts_list = [r.timestamp for r in exit_records if r.timestamp is not None]
-        if not exit_ts_list:
-            continue
-        exit_ts = max(exit_ts_list)
-
-        best_entry_id = None
-        best_sim = -1.0
-
-        for entry_id, entry_records in entry_entities.items():
-            if entry_id in matched_entry_ids:
-                continue
-
-            entry_ts_list = [r.timestamp for r in entry_records if r.timestamp is not None]
-            if not entry_ts_list:
-                continue
-            entry_ts = min(entry_ts_list)
-
-            # Exit must occur strictly after entry (entry must be at a
-            # previous timestamp, not the same instant)
-            if exit_ts <= entry_ts:
-                continue
-
-            # Compute max pair similarity
-            max_pair_sim = -1.0
-            for exit_rec in exit_records:
-                sims = compute_similarities(
-                    feat=exit_rec.feature,
-                    hsv_hist=exit_rec.hsv_hist,
-                    aspect_ratio=exit_rec.aspect_ratio,
-                    timestamp=exit_rec.timestamp,
-                    img_name=exit_rec.img_name,
-                    database=entry_records,
-                )
-                for sim in sims.values():
-                    if sim > max_pair_sim:
-                        max_pair_sim = sim
-
-            if max_pair_sim > best_sim:
-                best_sim = max_pair_sim
-                best_entry_id = entry_id
-
-        if best_entry_id is not None and best_sim >= threshold:
-            matched_entry_ids.add(best_entry_id)
-            entry_records = entry_entities[best_entry_id]
-            entry_ts = min(r.timestamp for r in entry_records if r.timestamp is not None)
-
-            matches.append({
-                "entry_id": best_entry_id,
-                "exit_id": exit_id,
-                "similarity": best_sim,
-                "entry_time": entry_ts,
-                "exit_time": exit_ts,
-                "dwell_time": exit_ts - entry_ts
-            })
-
-    return matches
 
 
 def calculate_occupancy_timeline(
@@ -707,11 +692,13 @@ def calculate_occupancy_timeline(
     timeline = []
     for event in raw_timeline:
         current_occupancy += event["change"]
-        timeline.append({
-            "timestamp": event["timestamp"],
-            "occupancy": current_occupancy,
-            "label": event["label"]
-        })
+        timeline.append(
+            {
+                "timestamp": event["timestamp"],
+                "occupancy": current_occupancy,
+                "label": event["label"],
+            }
+        )
 
     return timeline
 
@@ -722,6 +709,7 @@ def extract_features_for_directory(
     device: torch.device,
     transform: Any,
     cores: int = 1,
+    flip: bool = False,
 ) -> Dict[Path, List[Dict[str, Any]]]:
     """
     Helper function to run parallel feature extraction for a list of image paths.
@@ -732,6 +720,8 @@ def extract_features_for_directory(
         device (torch.device): PyTorch device to execute on.
         transform (Any): Image pre-processing transform pipeline.
         cores (int): Number of parallel CPU worker threads to spawn. Defaults to 1.
+        flip (bool): If True, horizontally mirrors each crop before feature extraction.
+            See `process_images_worker` for rationale. Defaults to False.
 
     Returns:
         Dict[Path, List[Dict[str, Any]]]: A dictionary of detected crop features, aspect ratios,
@@ -739,7 +729,9 @@ def extract_features_for_directory(
     """
     results_dict: Dict[Path, List[Dict[str, Any]]] = {}
     lock = threading.Lock()
-    progress_bar = tqdm(total=len(image_paths), desc="Extracting Features", unit="image")
+    progress_bar = tqdm(
+        total=len(image_paths), desc="Extracting Features", unit="image"
+    )
 
     chunk_size = max(1, len(image_paths) // cores)
     threads = []
@@ -760,6 +752,7 @@ def extract_features_for_directory(
                 model,
                 device,
                 transform,
+                flip,
             ),
         )
         threads.append(thread)
@@ -848,6 +841,7 @@ def save_entry_exit_database_to_json(
     Raises:
         OSError: If writing to the file fails.
     """
+
     def serialize_db(db: List[ProfileRecord]) -> Dict[str, List[Dict[str, Any]]]:
         """
         Helper function to serialize a list of profile records.
@@ -892,10 +886,10 @@ def run_entry_exit_profiling(
     entry_dir: Union[str, Path],
     exit_dir: Union[str, Path],
     output_dir: Optional[Union[str, Path]] = None,
-    mode: Union[str, ProfilingMode] = ProfilingMode.DWELL,
     entry_direction: Union[str, Direction] = Direction.UNKNOWN,
     exit_direction: Union[str, Direction] = Direction.UNKNOWN,
     threshold: float = 0.75,
+    ratio_threshold: Optional[float] = 0.8,
     max_gap: Optional[float] = None,
     checkpoint: Optional[Union[str, Path]] = None,
     categories: str = "car,person",
@@ -904,17 +898,26 @@ def run_entry_exit_profiling(
     report: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Exposes a unified entry/exit profiling workflow as a backend API.
-    Can operate in either 'dwell' or 'occupancy' mode.
+    Unified entry/exit occupancy profiling workflow.
+
+    If `entry_dir` and `exit_dir` resolve to the same directory (a single camera
+    used for both directions of travel, distinguished only by
+    entry_direction/exit_direction), exit crops are horizontally flipped before
+    feature extraction. A vehicle exiting past that same fixed camera shows the
+    same physical side as it did entering, just moving the opposite way on
+    screen, so its crop is a mirror image of its entry appearance. Two distinct
+    cameras positioned across from each other don't need this, since each
+    camera's placement already captures the corresponding side directly.
 
     Args:
         entry_dir (Union[str, Path]): Path to directory containing entry camera images.
         exit_dir (Union[str, Path]): Path to directory containing exit camera images.
         output_dir (Optional[Union[str, Path]]): Base output path for annotated images. Defaults to None.
-        mode (Union[str, ProfilingMode]): Operation mode, either DWELL or OCCUPANCY. Defaults to ProfilingMode.DWELL.
         entry_direction (Union[str, Direction]): Target direction filter for entry camera. Defaults to Direction.UNKNOWN.
         exit_direction (Union[str, Direction]): Target direction filter for exit camera. Defaults to Direction.UNKNOWN.
         threshold (float): Similarity matching threshold. Defaults to 0.75.
+        ratio_threshold (Optional[float]): Maximum allowed ratio of best-to-second-best distance
+            used to reject ambiguous matches. Set to None to disable. Defaults to 0.8.
         max_gap (Optional[float]): Max gap in seconds for tracking. Defaults to None.
         checkpoint (Optional[Union[str, Path]]): Path to custom ResNet-50 weights. Defaults to None.
         categories (str): Comma-separated class suffix list to target (e.g. 'car,person'). Defaults to 'car,person'.
@@ -927,6 +930,15 @@ def run_entry_exit_profiling(
     """
     entry_folder = Path(entry_dir)
     exit_folder = Path(exit_dir)
+
+    # A single camera capturing both directions of travel (e.g. one camera on a
+    # driveway used for both entry and exit) sees the same physical side of an
+    # exiting vehicle as it did on entry, just moving the opposite way on
+    # screen - a horizontal mirror image of its entry appearance. Two distinct
+    # cameras positioned across from each other don't have this issue, since
+    # each camera's fixed placement (selected via --entry-direction/
+    # --exit-direction) already captures the correct corresponding side.
+    same_directory = entry_folder.resolve() == exit_folder.resolve()
 
     # Convert direction parameters to Direction Enum if they are strings
     def to_enum(d):
@@ -958,27 +970,6 @@ def run_entry_exit_profiling(
     entry_dir_enum = to_enum(entry_direction)
     exit_dir_enum = to_enum(exit_direction)
 
-    def to_mode_enum(m):
-        """
-        Converts a raw string or mode object to a ProfilingMode Enum.
-
-        Args:
-            m (Union[str, ProfilingMode]): Target value to convert.
-
-        Returns:
-            ProfilingMode: Resolved ProfilingMode enum member.
-        """
-        if isinstance(m, ProfilingMode):
-            return m
-        if not m:
-            return ProfilingMode.DWELL
-        m_str = str(m).lower().strip()
-        if m_str == "occupancy":
-            return ProfilingMode.OCCUPANCY
-        return ProfilingMode.DWELL
-
-    mode_enum = to_mode_enum(mode)
-
     allowed_categories = [cat.strip().lower() for cat in categories.split(",")]
 
     def find_images(folder, direction_interest: Direction):
@@ -1008,16 +999,18 @@ def run_entry_exit_profiling(
     entry_images = find_images(entry_folder, entry_dir_enum)
     exit_images = find_images(exit_folder, exit_dir_enum)
 
-    logger.info("Found %d entry images and %d exit images after directional filtering.", len(entry_images), len(exit_images))
+    logger.info(
+        "Found %d entry images and %d exit images after directional filtering.",
+        len(entry_images),
+        len(exit_images),
+    )
 
     if not entry_images and not exit_images:
         logger.warning("No matching images found in either entry or exit directories.")
         return {}
 
     # Load feature extractor model
-    model, device, transform = load_feature_extractor(
-        checkpoint_path=checkpoint
-    )
+    model, device, transform = load_feature_extractor(checkpoint_path=checkpoint)
 
     # Process entry images
     entry_results = {}
@@ -1027,7 +1020,11 @@ def run_entry_exit_profiling(
             entry_images, model, device, transform, cores=cores
         )
     entry_db, entry_grouped = track_entities_in_directory(
-        entry_results, entry_images, threshold=threshold, max_gap=max_gap
+        entry_results,
+        entry_images,
+        threshold=threshold,
+        ratio_threshold=ratio_threshold,
+        max_gap=max_gap,
     )
     entry_filtered = entry_grouped
 
@@ -1035,11 +1032,20 @@ def run_entry_exit_profiling(
     exit_results = {}
     if exit_images:
         logger.info("Processing exit directory images...")
+        if same_directory:
+            logger.info(
+                "Entry and exit directories are the same; horizontally "
+                "flipping exit crops before feature extraction."
+            )
         exit_results = extract_features_for_directory(
-            exit_images, model, device, transform, cores=cores
+            exit_images, model, device, transform, cores=cores, flip=same_directory
         )
     exit_db, exit_grouped = track_entities_in_directory(
-        exit_results, exit_images, threshold=threshold, max_gap=max_gap
+        exit_results,
+        exit_images,
+        threshold=threshold,
+        ratio_threshold=ratio_threshold,
+        max_gap=max_gap,
     )
     exit_filtered = exit_grouped
 
@@ -1047,10 +1053,10 @@ def run_entry_exit_profiling(
         "metadata": {
             "entry_dir": str(entry_folder),
             "exit_dir": str(exit_folder),
-            "mode": mode_enum.name.lower(),
             "entry_direction": entry_dir_enum.name.lower(),
             "exit_direction": exit_dir_enum.name.lower(),
             "threshold": threshold,
+            "ratio_threshold": ratio_threshold,
             "max_gap": max_gap,
             "generated_at": datetime.datetime.now().isoformat(),
         },
@@ -1059,41 +1065,26 @@ def run_entry_exit_profiling(
             "entry_entities_after_filtering": len(entry_filtered),
             "exit_entities_detected": len(exit_grouped),
             "exit_entities_after_filtering": len(exit_filtered),
-        }
+        },
     }
 
-    # Dwell vs Occupancy calculation
-    if mode_enum == ProfilingMode.DWELL:
-        logger.info("Calculating dwell times between entry and exit cameras...")
-        matches = match_entry_exit_entities(entry_filtered, exit_filtered, threshold=threshold)
-        summary_report["dwell_time_matches"] = matches
-        summary_report["statistics"]["matched_entities"] = len(matches)
+    # Occupancy calculation
+    logger.info("Calculating occupancy timeline...")
+    timeline = calculate_occupancy_timeline(entry_filtered, exit_filtered)
+    summary_report["occupancy_timeline"] = timeline
+    max_occ = max([t["occupancy"] for t in timeline]) if timeline else 0
+    summary_report["statistics"]["maximum_occupancy"] = max_occ
 
-        if matches:
-            avg_dwell = sum(m["dwell_time"] for m in matches) / len(matches)
-        else:
-            avg_dwell = 0.0
-        summary_report["statistics"]["average_dwell_time"] = avg_dwell
-
-        print("\n--- Dwell Time Summary ---")
-        print(f"Total Matched Entities: {len(matches)}")
-        print(f"Average Dwell Time: {avg_dwell:.2f} seconds\n")
-
-    elif mode_enum == ProfilingMode.OCCUPANCY:
-        logger.info("Calculating occupancy timeline...")
-        timeline = calculate_occupancy_timeline(entry_filtered, exit_filtered)
-        summary_report["occupancy_timeline"] = timeline
-        max_occ = max([t["occupancy"] for t in timeline]) if timeline else 0
-        summary_report["statistics"]["maximum_occupancy"] = max_occ
-
-        print("\n--- Occupancy Summary ---")
-        print(f"Maximum Running Occupancy: {max_occ}")
-        print("Occupancy profiling complete!\n")
+    print("\n--- Occupancy Summary ---")
+    print(f"Maximum Running Occupancy: {max_occ}")
+    print("Occupancy profiling complete!\n")
 
     # Annotate and save images if output_dir is specified
     if output_dir:
         out_folder = Path(output_dir)
-        logger.info("Exporting entry annotated visual outputs to %s...", out_folder / "entry")
+        logger.info(
+            "Exporting entry annotated visual outputs to %s...", out_folder / "entry"
+        )
 
         # Build image mapping
         def build_mapping(db, results_dict):
@@ -1123,7 +1114,9 @@ def run_entry_exit_profiling(
         entry_mapping = build_mapping(entry_db, entry_results)
         annotate_and_save_images(entry_mapping, entry_folder, out_folder / "entry")
 
-        logger.info("Exporting exit annotated visual outputs to %s...", out_folder / "exit")
+        logger.info(
+            "Exporting exit annotated visual outputs to %s...", out_folder / "exit"
+        )
         exit_mapping = build_mapping(exit_db, exit_results)
         annotate_and_save_images(exit_mapping, exit_folder, out_folder / "exit")
 
@@ -1152,10 +1145,18 @@ def main() -> None:
     )
     # Made positional arguments optional to gracefully support --entry-dir and --exit-dir
     parser.add_argument(
-        "input_dir", type=str, nargs="?", default=None, help="Path to the input directory of images."
+        "input_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Path to the input directory of images.",
     )
     parser.add_argument(
-        "output_dir", type=str, nargs="?", default=None, help="Path to save visual detection output images."
+        "output_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Path to save visual detection output images.",
     )
     parser.add_argument(
         "-c",
@@ -1170,6 +1171,13 @@ def main() -> None:
         type=float,
         default=0.75,
         help="Cosine similarity threshold for reidentification matching (default: 0.75).",
+    )
+    parser.add_argument(
+        "--ratio-threshold",
+        type=float,
+        default=0.8,
+        help="Maximum allowed ratio of best-to-second-best match distance; rejects ambiguous "
+        "matches even if they clear --threshold (default: 0.8). Pass a value <= 0 to disable.",
     )
     parser.add_argument(
         "--checkpoint",
@@ -1195,13 +1203,6 @@ def main() -> None:
         type=str,
         default=None,
         help="Path to save the final ProfileDatabase serialized JSON.",
-    )
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="dwell",
-        choices=["dwell", "occupancy"],
-        help="The profiling operation mode (dwell: calculate travel/dwell times, occupancy: track concurrent counts).",
     )
     parser.add_argument(
         "--entry-dir",
@@ -1245,16 +1246,18 @@ def main() -> None:
         sys.exit(1)
     thread_count = args.cores
 
+    ratio_threshold = args.ratio_threshold if args.ratio_threshold > 0 else None
+
     if args.entry_dir and args.exit_dir:
         # Run dual-camera entry/exit workflow
         run_entry_exit_profiling(
             entry_dir=args.entry_dir,
             exit_dir=args.exit_dir,
             output_dir=output_folder or args.output_dir,
-            mode=args.mode,
             entry_direction=args.entry_direction,
             exit_direction=args.exit_direction,
             threshold=args.threshold,
+            ratio_threshold=ratio_threshold,
             max_gap=args.max_gap,
             checkpoint=args.checkpoint,
             categories=args.categories,
@@ -1302,7 +1305,11 @@ def main() -> None:
         # Phase 2: Chronological Re-identification (Sequential)
         logger.info("Matching and tracking entities across images...")
         database, grouped = track_entities_in_directory(
-            results_dict, all_images, threshold=args.threshold, max_gap=args.max_gap
+            results_dict,
+            all_images,
+            threshold=args.threshold,
+            ratio_threshold=ratio_threshold,
+            max_gap=args.max_gap,
         )
 
         # Print summary to CLI
@@ -1341,6 +1348,7 @@ def main() -> None:
                     "output_dir": str(output_folder) if output_folder else None,
                     "model_checkpoint": args.checkpoint,
                     "reid_threshold": args.threshold,
+                    "reid_ratio_threshold": ratio_threshold,
                     "total_images_processed": len(all_images),
                     "generated_at": datetime.datetime.now().isoformat(),
                 },

@@ -7,6 +7,9 @@ from src.utility.imgutils import (
     get_hsv_hist,
     detect_entities,
     get_timestamp,
+    load_video_start_times,
+    validate_video_start_times,
+    _normalize_plate_text,
 )
 
 
@@ -71,6 +74,63 @@ def test_get_timestamp_not_found():
         get_timestamp(Path("non_existent_file.jpg"))
 
 
+def test_load_video_start_times_parses_epoch_and_iso(tmp_path):
+    json_path = tmp_path / "start_times.json"
+    json_path.write_text('[1700000000, "2026-07-08T14:30:00"]')
+
+    start_times = load_video_start_times(json_path)
+
+    assert start_times[0] == datetime.datetime.fromtimestamp(1700000000)
+    assert start_times[1] == datetime.datetime(2026, 7, 8, 14, 30, 0)
+    assert all(isinstance(t, datetime.datetime) for t in start_times)
+
+
+def test_load_video_start_times_rejects_invalid_value(tmp_path):
+    json_path = tmp_path / "start_times.json"
+    json_path.write_text("[null]")
+
+    with pytest.raises(ValueError):
+        load_video_start_times(json_path)
+
+
+def test_load_video_start_times_rejects_non_array(tmp_path):
+    json_path = tmp_path / "start_times.json"
+    json_path.write_text('{"clip1.mp4": 1700000000}')
+
+    with pytest.raises(ValueError):
+        load_video_start_times(json_path)
+
+
+def test_validate_video_start_times_none_is_always_ok():
+    validate_video_start_times(None, 0)
+    validate_video_start_times(None, 5)
+
+
+def test_validate_video_start_times_matching_length_is_ok():
+    validate_video_start_times([1.0, 2.0, 3.0], 3)
+
+
+def test_validate_video_start_times_mismatched_length_raises():
+    with pytest.raises(ValueError):
+        validate_video_start_times([1.0, 2.0], 3)
+
+    with pytest.raises(ValueError):
+        validate_video_start_times([1.0, 2.0, 3.0], 2)
+
+
+@pytest.mark.parametrize(
+    "raw_text,expected",
+    [
+        ("ABC1234", "ABC1234"),
+        ("abc-1234\n", "ABC1234"),
+        ("  7 GXR 21 ", "7GXR21"),
+        ("!!!", ""),
+    ],
+)
+def test_normalize_plate_text(raw_text, expected):
+    assert _normalize_plate_text(raw_text) == expected
+
+
 @pytest.mark.parametrize(
     "filename,expected_dt",
     [
@@ -86,10 +146,15 @@ def test_get_timestamp_not_found():
 )
 def test_extract_timestamp_via_ocr_parameterized(filename, expected_dt):
     from src.utility.imgutils import extract_timestamp_via_ocr
-    
-    img_path = Path("/home/elliotscher/Documents/Development/WPI/Acadia-AI-E26/tests/data/images/OCR") / filename
+
+    img_path = (
+        Path(
+            "/home/elliotscher/Documents/Development/WPI/Acadia-AI-E26/tests/data/images/OCR"
+        )
+        / filename
+    )
     ts = extract_timestamp_via_ocr(img_path)
-    
+
     if expected_dt is None:
         assert ts is None
     else:

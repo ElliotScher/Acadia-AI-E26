@@ -1,13 +1,11 @@
 import pytest
 import numpy as np
-from src.processing.image_entityprofiler import (
+from src.processing.image_occupancyprofiler import (
     ProfileRecord,
     Direction,
-    ProfilingMode,
     compute_similarities,
     assign_entity_id,
     track_entities_in_directory,
-    match_entry_exit_entities,
     calculate_occupancy_timeline,
     run_entry_exit_profiling,
 )
@@ -130,7 +128,6 @@ def test_assign_entity_id_existing_entity():
     assert sim == pytest.approx(1.0)
 
 
-
 def test_track_entities_in_directory_max_gap():
     from pathlib import Path
 
@@ -145,7 +142,10 @@ def test_track_entities_in_directory_max_gap():
             {"box": [12, 10, 5, 5], "feature": feat1, "timestamp": 25.0}
         ],  # Gap is 15.0 seconds
     }
-    image_paths = [Path("tests/data/images/OCR/entity_1_right_car.jpg"), Path("tests/data/images/OCR/entity_8_right_car.jpg")]
+    image_paths = [
+        Path("tests/data/images/OCR/entity_1_right_car.jpg"),
+        Path("tests/data/images/OCR/entity_8_right_car.jpg"),
+    ]
 
     # Without max_gap, they match
     db, grouped = track_entities_in_directory(
@@ -158,39 +158,6 @@ def test_track_entities_in_directory_max_gap():
         results_dict, image_paths, threshold=0.75, max_gap=10.0
     )
     assert len(grouped) == 2
-
-
-def test_match_entry_exit_entities():
-    feat1 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-    feat2 = np.array([0.0, 1.0, 0.0], dtype=np.float32)
-
-    entry_entities = {
-        1: [
-            ProfileRecord(
-                entity_id=1, feature=feat1, timestamp=10.0, box=[10, 20, 5, 5]
-            )
-        ],
-        2: [
-            ProfileRecord(
-                entity_id=2, feature=feat2, timestamp=20.0, box=[10, 20, 5, 5]
-            )
-        ],
-    }
-
-    exit_entities = {
-        10: [
-            ProfileRecord(
-                entity_id=10, feature=feat1, timestamp=50.0, box=[30, 20, 5, 5]
-            )
-        ],
-    }
-
-    # Matches exit_10 (feat1) to entry_1 (feat1)
-    matches = match_entry_exit_entities(entry_entities, exit_entities, threshold=0.75)
-    assert len(matches) == 1
-    assert matches[0]["entry_id"] == 1
-    assert matches[0]["exit_id"] == 10
-    assert matches[0]["dwell_time"] == pytest.approx(40.0)
 
 
 def test_calculate_occupancy_timeline():
@@ -245,40 +212,36 @@ def test_calculate_occupancy_timeline():
 def test_run_entry_exit_profiling_api():
     from unittest.mock import patch, MagicMock
     from pathlib import Path
-    
-    with patch("src.processing.image_entityprofiler.load_feature_extractor") as mock_load, \
-         patch("src.processing.image_entityprofiler.extract_features_for_directory") as mock_extract, \
-         patch("src.processing.image_entityprofiler.Path.exists", return_value=True), \
-         patch("src.processing.image_entityprofiler.Path.is_file", return_value=True), \
-         patch("src.processing.image_entityprofiler.Path.rglob", return_value=[Path("tests/data/images/OCR/entity_1_right_car.jpg")]):
-         
-         mock_load.return_value = (MagicMock(), MagicMock(), MagicMock())
-         
-         mock_extract.return_value = {
-             Path("tests/data/images/OCR/entity_1_right_car.jpg"): [
-                 {
-                     "box": [10, 20, 5, 5],
-                     "feature": np.array([1.0, 0.0]),
-                     "hsv_hist": np.array([0.5]),
-                     "aspect_ratio": 1.0,
-                     "timestamp": 10.0,
-                     "img_name": "entity_1_left_car.jpg"
-                 }
-             ]
-         }
-         
-         # 1. Test with ProfilingMode.DWELL enum
-         res_dwell = run_entry_exit_profiling(
-             entry_dir="dummy_entry",
-             exit_dir="dummy_exit",
-             mode=ProfilingMode.DWELL
-         )
-         assert "dwell_time_matches" in res_dwell
-         
-         # 2. Test with ProfilingMode.OCCUPANCY enum
-         res_occ = run_entry_exit_profiling(
-             entry_dir="dummy_entry",
-             exit_dir="dummy_exit",
-             mode=ProfilingMode.OCCUPANCY
-         )
-         assert "occupancy_timeline" in res_occ
+
+    with (
+        patch(
+            "src.processing.image_occupancyprofiler.load_feature_extractor"
+        ) as mock_load,
+        patch(
+            "src.processing.image_occupancyprofiler.extract_features_for_directory"
+        ) as mock_extract,
+        patch("src.processing.image_occupancyprofiler.Path.exists", return_value=True),
+        patch("src.processing.image_occupancyprofiler.Path.is_file", return_value=True),
+        patch(
+            "src.processing.image_occupancyprofiler.Path.rglob",
+            return_value=[Path("tests/data/images/OCR/entity_1_right_car.jpg")],
+        ),
+    ):
+
+        mock_load.return_value = (MagicMock(), MagicMock(), MagicMock())
+
+        mock_extract.return_value = {
+            Path("tests/data/images/OCR/entity_1_right_car.jpg"): [
+                {
+                    "box": [10, 20, 5, 5],
+                    "feature": np.array([1.0, 0.0]),
+                    "hsv_hist": np.array([0.5]),
+                    "aspect_ratio": 1.0,
+                    "timestamp": 10.0,
+                    "img_name": "entity_1_left_car.jpg",
+                }
+            ]
+        }
+
+        res = run_entry_exit_profiling(entry_dir="dummy_entry", exit_dir="dummy_exit")
+        assert "occupancy_timeline" in res
