@@ -27,6 +27,9 @@ from pathlib import Path
 import csv
 
 from detection.yolo import process_single_image, CLASS_ID_MAPPING
+from detection.pose_direction import (
+    process_single_image as process_single_image_pose_direction,
+)
 
 
 class Base(DeclarativeBase):
@@ -258,6 +261,33 @@ class Instance(Base):
     @staticmethod
     def get_present_types(session: Session) -> list[int]:
         return list(session.scalars(select(Instance.type_id).distinct()))
+
+    def analyze_pose_direction(self, session: Session, model, conf, minPoints):
+        if self.type_id != 0 and self.type_id != 1:
+            return
+
+        directions = process_single_image_pose_direction(
+            model,
+            Path(self.image.path).resolve(),
+            Path(),
+            Path(),
+            False,
+            conf,
+            [0],
+            (
+                self.x,
+                self.y,
+                self.x + self.width,
+                self.y + self.height,
+            ),
+            minPoints,
+        )
+
+        if len(directions) > 0:
+            self.direction_fb = directions[0].front_back
+            self.direction_lr = directions[0].left_right
+            session.add(self)
+            session.commit()
 
 
 trigger_ddl = DDL("""

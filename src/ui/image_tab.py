@@ -17,6 +17,7 @@ from filters.image import (
     NotAnalyzedFilter,
 )
 from analyze_dialog import AnalyzeDialog
+from pose_direction_dialog import PoseDirectionDialog
 
 colors = (
     "#00ff00",
@@ -187,6 +188,25 @@ class ImageTab(QtWidgets.QWidget):
             )
 
         dialog = AnalyzeDialog(self.session, self.yoloModel, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+    
+    @QtCore.Slot()
+    def analyzePoseDirection(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        if not hasattr(self, "yoloPoseModel"):
+            self.yoloPoseModel = load_model("yolo26s-pose.pt")
+
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = PoseDirectionDialog(self.session, self.yoloPoseModel, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
