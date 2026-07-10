@@ -211,7 +211,7 @@ def process_single_image(
     """
     Processes a single image: runs detection, parses results, and optionally saves output.
     """
-    raw_results = detect_pose(model, img_path, conf, classes)
+    raw_results = detect_pose(model, img_path, conf, classes, box)
     directions = parse_poses(raw_results, img_path, conf, box, min_points)
 
     if save_images:
