@@ -6,7 +6,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
 
 from detection.yolo import CLASS_ID_MAPPING
-from db.models import Entity, Instance
+from db.models import Entity, Instance, Image
 from filters import Filters
 from filters.entity import EntityDateFilter, EntityTimeFilter, EntityTypeFilter
 
@@ -181,6 +181,8 @@ class GalleryModel(QtCore.QAbstractListModel):
 class EntityInfo(QtWidgets.QGroupBox):
     def __init__(self):
         super().__init__()
+        self.instances: list[Instance] = []
+
         self.setTitle("Entity Info")
         self.setMinimumSize(400, 500)
         self.setMaximumWidth(400)
@@ -209,15 +211,11 @@ class EntityInfo(QtWidgets.QGroupBox):
             self.placeholder.show()
 
     def showInfo(self, entity: Entity, session: Session):
-        instances = entity.get_instances(session)
+        self.instances = entity.get_instances(session)
         latest = entity.get_latest_image(session)
         self.images.clear()
-        seen: dict[str, bool] = {}
-        for i in range(len(instances)):
-            instance = instances[i]
-            if instance.image.path in seen:
-                continue
-            seen[instance.image.path] = True
+        for i in range(len(self.instances)):
+            instance = self.instances[i]
             c = instance.confidence
             item = QtWidgets.QListWidgetItem(
                 QtGui.QIcon(instance.image.path),
@@ -236,8 +234,8 @@ class EntityInfo(QtWidgets.QGroupBox):
                     QtCore.QRect(0, i, 1, 1),
                     QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
                 )
-        if len(instances) > 0 and instances[0].type_id in CLASS_ID_MAPPING:
-            self.typeLabel.setText(CLASS_ID_MAPPING[instances[0].type_id].title() + " seen in:")
+        if len(self.instances) > 0 and self.instances[0].type_id in CLASS_ID_MAPPING:
+            self.typeLabel.setText(CLASS_ID_MAPPING[self.instances[0].type_id].title() + " seen in:")
         self.viewer.set(entity, session)
         self.info.show()
         self.placeholder.hide()
@@ -249,7 +247,17 @@ class EntityInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.typeLabel)
         self.images = QtWidgets.QListWidget()
         layout.addWidget(self.images)
+        self.images.selectionModel().selectionChanged.connect(self.setViewImage)
         return widget
+
+    @QtCore.Slot()
+    def setViewImage(self):
+        selection = self.images.selectedIndexes()
+        if len(selection) < 1 or len(self.instances) <= selection[0].row():
+            return
+        instance = self.instances[selection[0].row()]
+        self.viewer.setInstance(instance.image, instance)
+
 
 
 class EntityViewer(QtWidgets.QGraphicsView):
@@ -268,8 +276,12 @@ class EntityViewer(QtWidgets.QGraphicsView):
                 and_(Instance.image_id == image.id, Instance.entity_id == entity.id)
             )
         )
-        if not instance:
-            return
+        if instance:
+            self.setInstance(image, instance)
+
+
+    @QtCore.Slot(Entity, Image, Instance)
+    def setInstance(self, image: Image, instance: Instance):
         pixmap = QtGui.QPixmap(image.path)
         self.scene().addPixmap(pixmap)
         pen = QtGui.QPen("#ffffff")
