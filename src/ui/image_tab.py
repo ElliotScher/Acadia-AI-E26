@@ -91,12 +91,11 @@ class GalleryModel(QtCore.QAbstractListModel):
             QtCore.QModelIndex | QtCore.QPersistentModelIndex
         ) = QtCore.QModelIndex(),
     ):
-        newmax = min(
-            self.size + 300,
-            len(self.results),
-        )
-        self.beginInsertRows(QtCore.QModelIndex(), self.size, newmax - 1)
-        self.size = newmax
+        tofetch = min(300, len(self.results) - self.size)
+        if tofetch < 1:
+            return
+        self.beginInsertRows(QtCore.QModelIndex(), self.size, self.size + tofetch - 1)
+        self.size += tofetch
         self.endInsertRows()
 
     def canFetchMore(
@@ -219,6 +218,26 @@ class ImageTab(QtWidgets.QWidget):
             )
 
         Image.export_to_csv(self.session, images, path)
+
+    @QtCore.Slot(Image)
+    def focusImage(self, image: Image):
+        if image.id not in self.galleryModel.results:
+            return
+        i = self.galleryModel.results.index(image.id)
+        # this is scary, and should ideally be removed
+        while i >= self.galleryModel.rowCount():
+            if self.galleryModel.canFetchMore(QtCore.QModelIndex()):
+                self.galleryModel.fetchMore(QtCore.QModelIndex())
+            else:
+                break
+        if i >= self.galleryModel.rowCount():
+            raise Exception(f"Failed to find {image} in the image tab. Yikes!")
+        index = self.galleryModel.index(i, 0)
+        self.gallery.scrollTo(index)
+        self.gallery.selectionModel().select(
+            QtCore.QItemSelection(index, index),
+            QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
+        )
 
 
 class ImageGallery(QtWidgets.QListView):
