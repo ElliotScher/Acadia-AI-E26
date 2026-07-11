@@ -1,16 +1,16 @@
-from pathlib import Path
-from sqlalchemy import select
+#!/usr/bin/env python
 import os
 import sys
-
+from pathlib import Path
 import image_tab as it
 from PySide6 import QtCore, QtGui, QtWidgets
-
-from db import get_db
-from db.models import Image
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+import utility.parallel as upl
+from db import get_db
+from db.models import Image
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -33,6 +33,16 @@ class Root(QtWidgets.QMainWindow):
         layout.addWidget(self.tabs)
 
         self.buildMenu()
+
+        self.spinner = QtWidgets.QLabel()
+        layout.addWidget(self.spinner)
+        upl.ThreadTracker().threadAdded.connect(self.spin)
+        upl.ThreadTracker().threadProgress.connect(self.spin)
+        upl.ThreadTracker().threadRemoved.connect(self.spin)
+
+    @QtCore.Slot(QtCore.QThread)
+    def spin(self, thread: QtCore.QThread):
+        self.spinner.setText(upl.ThreadTracker().spinText())
 
     def buildMenu(self):
         mFile = self.menuBar().addMenu("File")
@@ -73,13 +83,18 @@ class Root(QtWidgets.QMainWindow):
         aSelectInvert.triggered.connect(self.selectInverse)
         mSelect.addAction(aSelectInvert)
 
-    @QtCore.Slot()
-    def fileOpen(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
+    def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        self.imageTab.setsession(self.session)
+        # self.imageTab.setsession(self.session)
+
+    @QtCore.Slot()
+    def fileOpen(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
+        thread = upl.Async("File Open", lambda: self._fileOpen(path))
+        thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.start()
 
     @QtCore.Slot()
     def fileExportFiltered(self):
