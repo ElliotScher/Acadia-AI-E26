@@ -34,6 +34,7 @@ colors = (
 
 class EntitiesTab(QtWidgets.QWidget):
     session: Session
+    imageOpened = QtCore.Signal(Image)
 
     def __init__(self):
         super().__init__()
@@ -52,6 +53,7 @@ class EntitiesTab(QtWidgets.QWidget):
 
         layout.addWidget(gallerySide)
         self.entityInfo = EntityInfo()
+        self.entityInfo.imageOpened.connect(self.imageOpened.emit)
         layout.addWidget(self.entityInfo)
 
     @QtCore.Slot()
@@ -80,15 +82,13 @@ class EntitiesTab(QtWidgets.QWidget):
 
         subquery = self.filters.makeFilter(Entity.id).subquery()
         query = (
-            select(subquery)
-            .select_from(subquery)
-            .order_by(subquery.c.id)
-            .distinct()
+            select(subquery).select_from(subquery).order_by(subquery.c.id).distinct()
         )
         self.galleryModel.results = list(
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
         self.count.setText(str(len(self.galleryModel.results)) + " entities")
+
 
 class EntityGallery(QtWidgets.QListView):
     def __init__(self):
@@ -179,6 +179,8 @@ class GalleryModel(QtCore.QAbstractListModel):
 
 
 class EntityInfo(QtWidgets.QGroupBox):
+    imageOpened = QtCore.Signal(Image)
+
     def __init__(self):
         super().__init__()
         self.instances: list[Instance] = []
@@ -216,26 +218,41 @@ class EntityInfo(QtWidgets.QGroupBox):
         self.images.clear()
         for i in range(len(self.instances)):
             instance = self.instances[i]
+            widget = QtWidgets.QWidget(self.images)
+            widget.setFixedHeight(40)
+            layout = QtWidgets.QHBoxLayout(widget)
+            icon = QtGui.QIcon(instance.image.path)
+            iconWidget = QtWidgets.QLabel(parent=widget, pixmap=icon.pixmap(50, 50))
+            layout.addWidget(iconWidget)
             c = instance.confidence
-            item = QtWidgets.QListWidgetItem(
-                QtGui.QIcon(instance.image.path),
-                f"{c:0.2%} at {instance.image.datetime.strftime('%Y-%m-%d %H:%M:%S')}",
+            color = (
+                f"#{int(30 * c + 255 * (1 - c)):02x}{int(255 * c + 30 * (1 - c)):02x}1e"
             )
-            item.setForeground(
-                QtGui.QBrush(
-                    QtGui.QColor(
-                        int(30 * c + 255 * (1 - c)), int(255 * c + 30 * (1 - c)), 30
-                    )
-                )
+            date = instance.image.datetime.strftime("%c")
+            label = QtWidgets.QLabel(
+                f"<font color={color}>{c:0.2%}</font> taken on {date}",
             )
+            layout.addWidget(label)
+            item = QtWidgets.QListWidgetItem()
+            item.setSizeHint(QtCore.QSize(200, 40))
+            button = QtWidgets.QPushButton(parent=widget)
+            buttonicon = QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ViewFullscreen)
+            button.setIcon(buttonicon)
+            button.setIconSize(QtCore.QSize(15, 15))
+            button.setFixedSize(QtCore.QSize(25, 25))
+            button.clicked.connect(lambda: self.openInImageTab(instance.image))
+            layout.addWidget(button)
             self.images.addItem(item)
             if instance.image_id == latest.id:
                 self.images.setSelection(
                     QtCore.QRect(0, i, 1, 1),
                     QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
                 )
+            self.images.setItemWidget(item, widget)
         if len(self.instances) > 0 and self.instances[0].type_id in CLASS_ID_MAPPING:
-            self.typeLabel.setText(CLASS_ID_MAPPING[self.instances[0].type_id].title() + " seen in:")
+            self.typeLabel.setText(
+                CLASS_ID_MAPPING[self.instances[0].type_id].title() + " seen in:"
+            )
         self.viewer.set(entity, session)
         self.info.show()
         self.placeholder.hide()
@@ -243,9 +260,9 @@ class EntityInfo(QtWidgets.QGroupBox):
     def buildinfo(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        self.typeLabel = QtWidgets.QLabel()
+        self.typeLabel = QtWidgets.QLabel(parent=self)
         layout.addWidget(self.typeLabel)
-        self.images = QtWidgets.QListWidget()
+        self.images = QtWidgets.QListWidget(parent=self)
         layout.addWidget(self.images)
         self.images.selectionModel().selectionChanged.connect(self.setViewImage)
         return widget
@@ -258,6 +275,8 @@ class EntityInfo(QtWidgets.QGroupBox):
         instance = self.instances[selection[0].row()]
         self.viewer.setInstance(instance.image, instance)
 
+    def openInImageTab(self, image: Image):
+        self.imageOpened.emit(image)
 
 
 class EntityViewer(QtWidgets.QGraphicsView):
@@ -278,7 +297,6 @@ class EntityViewer(QtWidgets.QGraphicsView):
         )
         if instance:
             self.setInstance(image, instance)
-
 
     @QtCore.Slot(Entity, Image, Instance)
     def setInstance(self, image: Image, instance: Instance):

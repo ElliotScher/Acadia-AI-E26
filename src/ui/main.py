@@ -25,6 +25,7 @@ class Root(QtWidgets.QMainWindow):
 
         self.imageTab = ImageTab()
         self.entitiesTab = EntitiesTab()
+        self.entitiesTab.imageOpened.connect(self.openImage)
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self.imageTab, "Images")
@@ -127,6 +128,13 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
+
+    @QtCore.Slot()
+    def openImage(self, image: Image):
+        if self.tabs.currentWidget() == self.entitiesTab:
+            self.tabs.setCurrentWidget(self.imageTab)
+        self.imageTab.focusImage(image)
+
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
