@@ -12,7 +12,7 @@ class AnalyzedFilter(Filter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.layout.insertWidget(0, QtWidgets.QLabel("Analyzed"))
+        self.thisLayout.insertWidget(0, QtWidgets.QLabel("Analyzed"))
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
@@ -27,7 +27,7 @@ class NotAnalyzedFilter(Filter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.layout.insertWidget(0, QtWidgets.QLabel("Not analyzed"))
+        self.thisLayout.insertWidget(0, QtWidgets.QLabel("Not analyzed"))
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
@@ -68,25 +68,24 @@ class EntityFilter(Filter):
         self.minFilter = QtWidgets.QSpinBox()
         self.minFilter.setRange(1, 100)
         self.minFilter.valueChanged.connect(self.changed)
-        self.layout.insertWidget(0, self.minFilter)
+        self.thisLayout.insertWidget(0, self.minFilter)
 
         self.dash = QtWidgets.QLabel("-")
-        self.layout.insertWidget(1, self.dash)
+        self.thisLayout.insertWidget(1, self.dash)
 
         self.maxFilter = QtWidgets.QSpinBox()
         self.maxFilter.setRange(1, 100)
         self.maxFilter.setValue(100)
         self.maxFilter.valueChanged.connect(self.changed)
-        self.layout.insertWidget(2, self.maxFilter)
+        self.thisLayout.insertWidget(2, self.maxFilter)
 
         self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilterMap = dict()
         self.typeFilter.addItems(["Anything"])
         for typeId in CLASS_ID_MAPPING:
             self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title()])
         self.typeFilter.setMinimumWidth(100)
         self.typeFilter.currentTextChanged.connect(self.changed)
-        self.layout.insertWidget(3, self.typeFilter)
+        self.thisLayout.insertWidget(3, self.typeFilter)
 
         self.minConfidence = QtWidgets.QDoubleSpinBox()
         self.minConfidence.setSuffix("%")
@@ -94,14 +93,14 @@ class EntityFilter(Filter):
         self.minConfidence.setValue(0.25)
         self.minConfidence.setSingleStep(0.05)
         self.minConfidence.valueChanged.connect(self.changed)
-        self.layout.insertWidget(4, self.minConfidence)
+        self.thisLayout.insertWidget(4, self.minConfidence)
 
         self.minConfidenceLabel = QtWidgets.QLabel("confidence")
-        self.layout.insertWidget(5, self.minConfidenceLabel)
+        self.thisLayout.insertWidget(5, self.minConfidenceLabel)
 
         self.expandButton = QtWidgets.QPushButton(">")
         self.expandButton.setMaximumWidth(25)
-        self.layout.insertWidget(6, self.expandButton)
+        self.thisLayout.insertWidget(6, self.expandButton)
         self.expandButton.pressed.connect(self.toggleExpand)
 
         self.expanded = True
@@ -152,15 +151,14 @@ class NoEntityFilter(Filter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.layout.insertWidget(0, QtWidgets.QLabel("No"))
+        self.thisLayout.insertWidget(0, QtWidgets.QLabel("No"))
 
         self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilterMap = dict()
         for typeId in CLASS_ID_MAPPING:
             self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title()])
         self.typeFilter.setMinimumWidth(100)
         self.typeFilter.currentTextChanged.connect(self.changed)
-        self.layout.insertWidget(1, self.typeFilter)
+        self.thisLayout.insertWidget(1, self.typeFilter)
 
         self.maxConfidence = QtWidgets.QDoubleSpinBox()
         self.maxConfidence.setSuffix("%")
@@ -168,14 +166,14 @@ class NoEntityFilter(Filter):
         self.maxConfidence.setValue(0.25)
         self.maxConfidence.setSingleStep(0.05)
         self.maxConfidence.valueChanged.connect(self.changed)
-        self.layout.insertWidget(2, self.maxConfidence)
+        self.thisLayout.insertWidget(2, self.maxConfidence)
 
         self.maxConfidenceLabel = QtWidgets.QLabel("confidence")
-        self.layout.insertWidget(3, self.maxConfidenceLabel)
+        self.thisLayout.insertWidget(3, self.maxConfidenceLabel)
 
         self.expandButton = QtWidgets.QPushButton(">")
         self.expandButton.setMaximumWidth(25)
-        self.layout.insertWidget(4, self.expandButton)
+        self.thisLayout.insertWidget(4, self.expandButton)
         self.expandButton.pressed.connect(self.toggleExpand)
 
         self.expanded = True

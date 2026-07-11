@@ -5,7 +5,7 @@ from sqlalchemy import select, Select, func, union
 from sqlalchemy.orm import Session
 from datetime import datetime, time
 
-from detection.yolo import load_model, CLASS_ID_MAPPING
+from detection.yolo import CLASS_ID_MAPPING
 from db.models import Image, Instance
 from filters import Filters
 from filters.image import (
@@ -42,26 +42,24 @@ colors = (
 
 class GalleryModel(QtCore.QAbstractListModel):
     session: Session
-    results: list[int]
-    thumbnails: dict[int, QtGui.QIcon]
     size: int = 0
     filters: "Filters"
 
     def __init__(self, session: Session):
         self.session = session
-        self.thumbnails = dict()
-        self.results = []
+        self.thumbnails: dict[int, QtGui.QIcon] = dict()
+        self.results: list[int] = []
         super().__init__()
 
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Image:
         return self.getById(self.results[index.row()])
-    
+
     def getById(self, id: int) -> Image:
         return self.session.scalar(
             select(Image).where(Image.id == id)
-        )
+        )  # type: ignore[invalid-return-type]
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -73,7 +71,7 @@ class GalleryModel(QtCore.QAbstractListModel):
                     return self.thumbnails[data.id]
                 else:
                     if len(self.thumbnails) > 300:
-                        self.thumbnails = dict()
+                        self.thumbnails: dict[int, QtGui.QIcon] = dict()
                     img = QtGui.QIcon(data.path)
                     self.thumbnails[data.id] = img
                     return img
@@ -181,19 +179,31 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "yoloModel"):
             self.yoloModel = load_model("yolo26s.pt")
 
-        images = []
+        images: list[Image] = []
         if filtered:
-            images = list(
-                map(self.galleryModel.getById, self.galleryModel.results)
-            )
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
             images = list(
-                map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
             )
 
-        dialog = AnalyzeDialog(self.session, self.yoloModel, images)
+        dialog = AnalyzeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
+
+    @QtCore.Slot()
+    def export(self, filtered: bool, path: str):
+        if not hasattr(self, "session"):
+            return
+
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        Image.export_to_csv(self.session, images, path)
 
 
 class ImageGallery(QtWidgets.QListView):
@@ -294,22 +304,22 @@ class ImageInfo(QtWidgets.QGroupBox):
 class ImageViewer(QtWidgets.QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.scene = QtWidgets.QGraphicsScene(self)
-        self.setScene(self.scene)
+        self.thisScene = QtWidgets.QGraphicsScene(self)
+        self.setScene(self.thisScene)
         self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
     def set(self, image: Image, instances: list[Instance]):
-        self.scene.clear()
+        self.thisScene.clear()
 
         pixmap = QtGui.QPixmap(image.path)
         self.resize(pixmap.width(), pixmap.height())
-        self.pixmapItem = self.scene.addPixmap(QtGui.QPixmap())
+        self.pixmapItem = self.thisScene.addPixmap(QtGui.QPixmap())
         self.pixmapItem.setPixmap(pixmap)
         self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
         for i in range(len(instances)):
             instance = instances[i]
-            self.scene.addRect(
+            self.thisScene.addRect(
                 instance.x,
                 instance.y,
                 instance.width,

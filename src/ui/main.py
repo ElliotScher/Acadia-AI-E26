@@ -1,14 +1,17 @@
+#!/usr/bin/env python
+
 import os
 import sys
 
 import image_tab as it
 from PySide6 import QtCore, QtGui, QtWidgets
-
-from db import get_db
-from db.models import Image
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+
 from detection.bike_rider_merging import merge_bikes_riders
+import utility.parallel as upl
+from db import get_db
+from db.models import Image
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -32,24 +35,41 @@ class Root(QtWidgets.QMainWindow):
 
         self.buildMenu()
 
+        self.spinner = QtWidgets.QLabel()
+        layout.addWidget(self.spinner)
+        upl.ThreadTracker().threadAdded.connect(self.spin)
+        upl.ThreadTracker().threadProgress.connect(self.spin)
+        upl.ThreadTracker().threadRemoved.connect(self.spin)
+
+    @QtCore.Slot(QtCore.QThread)
+    def spin(self, thread: QtCore.QThread):
+        self.spinner.setText(upl.ThreadTracker().spinText())
+
     def buildMenu(self):
         mFile = self.menuBar().addMenu("File")
         aOpen = QtGui.QAction("Open", self)
         aOpen.triggered.connect(self.fileOpen)
         mFile.addAction(aOpen)
-        aExport = QtGui.QAction("Export", self)
-        mFile.addAction(aExport)
+        aExportFiltered = QtGui.QAction("Export Filtered", self)
+        aExportFiltered.triggered.connect(self.fileExportFiltered)
+        mFile.addAction(aExportFiltered)
+        aExportAll = QtGui.QAction("Export All", self)
+        aExportAll.triggered.connect(self.fileExportAll)
+        mFile.addAction(aExportAll)
 
         mAnalyze = self.menuBar().addMenu("Analyze")
         aAnalyzeFiltered = QtGui.QAction("Analyze Filtered", self)
         aAnalyzeFiltered.triggered.connect(self.analyzeFiltered)
         mAnalyze.addAction(aAnalyzeFiltered)
-        aAnalyzeSelection = QtGui.QAction("Analyze Selection", self)
-        aAnalyzeSelection.triggered.connect(self.analyzeSelection)
-        mAnalyze.addAction(aAnalyzeSelection)
+        aAnalyzeAll = QtGui.QAction("Analyze All", self)
+        aAnalyzeAll.triggered.connect(self.analyzeAll)
+        mAnalyze.addAction(aAnalyzeAll)
         aMergeBikes = QtGui.QAction("Merge Bikes and Riders", self)
         aMergeBikes.triggered.connect(self.analyzeMergeBikes)
         mAnalyze.addAction(aMergeBikes)
+        aAnalyzeAll = QtGui.QAction("Analyze All", self)
+        aAnalyzeAll.triggered.connect(self.analyzeAll)
+        mAnalyze.addAction(aAnalyzeAll)
 
         mSelect = self.menuBar().addMenu("Select")
         aSelectAll = QtGui.QAction("Select All", self)
@@ -64,13 +84,38 @@ class Root(QtWidgets.QMainWindow):
         aSelectInvert.triggered.connect(self.selectInverse)
         mSelect.addAction(aSelectInvert)
 
-    @QtCore.Slot()
-    def fileOpen(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
+    def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        self.imageTab.setsession(self.session)
+        # self.imageTab.setsession(self.session)
+
+    @QtCore.Slot()
+    def fileOpen(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
+        thread = upl.Async("File Open", lambda: self._fileOpen(path))
+        thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.start()
+
+    @QtCore.Slot()
+    def fileExportFiltered(self):
+        isImages = self.tabs.currentWidget() == self.imageTab
+        path = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save export...", "images.csv" if isImages else "entities.csv"
+        )
+        if len(path[0]) > 0 and hasattr(self, "session"):
+            if isImages:
+                self.imageTab.export(True, path[0])
+
+    @QtCore.Slot()
+    def fileExportAll(self):
+        isImages = self.tabs.currentWidget() == self.imageTab
+        path = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save export...", "images.csv" if isImages else "entities.csv"
+        )
+        if len(path[0]) > 0 and hasattr(self, "session"):
+            if isImages:
+                self.imageTab.export(False, path[0])
 
     @QtCore.Slot()
     def selectAll(self):
@@ -93,7 +138,7 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.analyze(True)
 
     @QtCore.Slot()
-    def analyzeSelection(self):
+    def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
     
@@ -101,151 +146,6 @@ class Root(QtWidgets.QMainWindow):
     def analyzeMergeBikes(self):
         if hasattr(self, "session"):
             merge_bikes_riders(self.session, 0.2)
-
-
-# class SetupTab(QtWidgets.QWidget):
-#     folder = None
-#
-#     def __init__(self):
-#         super().__init__()
-#
-#         self.base_group = QtWidgets.QGroupBox("Base Model")
-#         self.base_group_layout = QtWidgets.QVBoxLayout()
-#         self.base_group.setLayout(self.base_group_layout)
-#
-#         self.base_select_folder = QtWidgets.QPushButton("Select Folder")
-#         self.base_group_layout.addWidget(self.base_select_folder)
-#         self.base_select_folder.clicked.connect(self.show_select_folder)
-#         self.base_select_folder.setDefault(True)
-#         self.base_folder_selection = QtWidgets.QLabel("No folder selected")
-#         self.base_group_layout.addWidget(self.base_folder_selection)
-#
-#         self.types_group = QtWidgets.QGroupBox("Target Types")
-#         self.types_group_layout = QtWidgets.QHBoxLayout()
-#         self.types_group.setLayout(self.types_group_layout)
-#         self.types_group.setDisabled(True)
-#         self.types_scroll = QtWidgets.QScrollArea()
-#         self.types_scroll.setWidgetResizable(True)
-#         self.types_scroll.setMinimumHeight(100)
-#         self.types_scroll_contents = QtWidgets.QWidget()
-#         self.types_scroll.setWidget(self.types_scroll_contents)
-#         self.types_group_layout.addWidget(self.types_scroll)
-#         self.types_scroll_layout = QtWidgets.QGridLayout()
-#         self.types_scroll_contents.setLayout(self.types_scroll_layout)
-#
-#         types = (
-#             "People",
-#             "Bikes",
-#             "Cars",
-#             "Trucks",
-#             "Buses",
-#             "Boats",
-#             "Motorcycles",
-#             "Dogs",
-#             "Horses",
-#             "Birds",
-#             "Bears",
-#             "Backpacks",
-#             "Handbags",
-#             "Suitcases",
-#             "Umbrellas",
-#             "Skateboards",
-#             "Snowboards",
-#             "Skis",
-#         )
-#         self.types_options = []
-#         for i in range(len(types)):
-#             type_checkbox = QtWidgets.QCheckBox(types[i])
-#             self.types_scroll_layout.addWidget(type_checkbox, math.floor(i / 3), i % 3)
-#             self.types_options.append(type_checkbox)
-#
-#         self.base_group_layout.addWidget(self.types_group)
-#
-#         self.base_denoising = QtWidgets.QCheckBox("Denoise images")
-#         self.base_group_layout.addWidget(self.base_denoising)
-#         self.base_denoising.setDisabled(True)
-#         self.base_run_model = QtWidgets.QPushButton("Run Base Model")
-#         self.base_group_layout.addWidget(self.base_run_model)
-#         self.base_run_model.clicked.connect(self.run_base_model)
-#         self.base_run_model.setDisabled(True)
-#
-#         self.matching_group = QtWidgets.QGroupBox("Matching Models")
-#         self.matching_group.setDisabled(True)
-#         self.matching_group_layout = QtWidgets.QVBoxLayout()
-#         self.matching_group.setLayout(self.matching_group_layout)
-#
-#         self.matching_reidentification = QtWidgets.QCheckBox("Re-identification")
-#         self.matching_group_layout.addWidget(self.matching_reidentification)
-#         self.matching_tracking = QtWidgets.QCheckBox("Tracking")
-#         self.matching_group_layout.addWidget(self.matching_tracking)
-#         self.run_matching_models = QtWidgets.QPushButton("Run Matching Models")
-#         self.matching_group_layout.addWidget(self.run_matching_models)
-#
-#         self.additional_group = QtWidgets.QGroupBox("Additional Models")
-#         self.additional_group.setDisabled(True)
-#         self.additional_group_layout = QtWidgets.QVBoxLayout()
-#         self.additional_group.setLayout(self.additional_group_layout)
-#
-#         self.additional_speed = QtWidgets.QCheckBox("Speed")
-#         self.additional_group_layout.addWidget(self.additional_speed)
-#         self.additional_direction = QtWidgets.QCheckBox("Direction")
-#         self.additional_group_layout.addWidget(self.additional_direction)
-#         self.additional_bike_type = QtWidgets.QCheckBox("Bike Type")
-#         self.additional_group_layout.addWidget(self.additional_bike_type)
-#         self.additional_clusters = QtWidgets.QCheckBox("Clusters")
-#         self.additional_group_layout.addWidget(self.additional_clusters)
-#         self.run_additional_models = QtWidgets.QPushButton("Run Additional Models")
-#         self.additional_group_layout.addWidget(self.run_additional_models)
-#
-#         self.layout = QtWidgets.QVBoxLayout(self)
-#         self.layout.addWidget(self.base_group)
-#         self.layout.addWidget(self.matching_group)
-#         self.layout.addWidget(self.additional_group)
-#
-#     @QtCore.Slot()
-#     def show_select_folder(self):
-#         old_folder = self.folder
-#         self.folder = QtWidgets.QFileDialog.getExistingDirectory(
-#             options=QtWidgets.QFileDialog.Option.ShowDirsOnly
-#         )
-#         if self.folder:
-#             self.base_folder_selection.setText("Folder: " + self.folder.split("/")[-2])
-#             self.base_select_folder.setDefault(False)
-#             self.types_group.setDisabled(False)
-#             self.base_denoising.setDisabled(False)
-#             self.base_run_model.setDisabled(False)
-#             self.base_run_model.setDefault(True)
-#             self.parentWidget().parentWidget().parentWidget().tabs.setTabEnabled(
-#                 1, True
-#             )
-#             if old_folder != self.folder:
-#                 self.parentWidget().parentWidget().parentWidget().tabs.setTabEnabled(
-#                     2, False
-#                 )
-#                 self.matching_group.setDisabled(True)
-#                 self.additional_group.setDisabled(True)
-#         else:
-#             self.base_folder_selection.setText("No folder selected")
-#             self.base_select_folder.setDefault(True)
-#             self.types_group.setDisabled(True)
-#             self.base_denoising.setDisabled(True)
-#             self.base_run_model.setDisabled(True)
-#             self.base_run_model.setDefault(False)
-#             self.parentWidget().parentWidget().parentWidget().tabs.setTabEnabled(
-#                 1, False
-#             )
-#             self.parentWidget().parentWidget().parentWidget().tabs.setTabEnabled(
-#                 2, False
-#             )
-#             self.matching_group.setDisabled(True)
-#             self.additional_group.setDisabled(True)
-#
-#     @QtCore.Slot()
-#     def run_base_model(self):
-#         self.matching_group.setDisabled(False)
-#         self.additional_group.setDisabled(False)
-#         self.base_run_model.setDefault(False)
-#         self.parentWidget().parentWidget().parentWidget().tabs.setTabEnabled(2, True)
 
 
 class EntitiesTab(QtWidgets.QWidget):
