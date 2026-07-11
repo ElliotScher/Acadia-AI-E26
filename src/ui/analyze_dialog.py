@@ -99,7 +99,12 @@ class AnalyzeDialog(QtWidgets.QDialog):
             images = self.images[(i * imagesPerThread) : ((i + 1) * imagesPerThread)]
             thread = upl.Async(
                 "Analysis " + str(i + 1),
-                functools.partial(self.analyzeThread, images, self.minConfidence.value(), targetClasses),
+                functools.partial(
+                    self.analyzeThread,
+                    images,
+                    self.minConfidence.value(),
+                    targetClasses,
+                ),
             )
             thread.result.connect(self.finishAnalysis)
             thread.start()

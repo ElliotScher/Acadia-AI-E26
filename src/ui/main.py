@@ -12,6 +12,7 @@ import utility.parallel as upl
 from db import get_db
 from db.models import Image
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -63,10 +64,14 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeAll = QtGui.QAction("Analyze All", self)
         aAnalyzeAll.triggered.connect(self.analyzeAll)
         mAnalyze.addAction(aAnalyzeAll)
-        aAnalyzePoseDirection = QtGui.QAction("Analyze Filtered For Direction From Poses", self)
+        aAnalyzePoseDirection = QtGui.QAction(
+            "Analyze Filtered For Direction From Poses", self
+        )
         aAnalyzePoseDirection.triggered.connect(self.analyzePoseDirection)
         mAnalyze.addAction(aAnalyzePoseDirection)
-        aAnalyzeAllPoseDirection = QtGui.QAction("Analyze All For Direction From Poses", self)
+        aAnalyzeAllPoseDirection = QtGui.QAction(
+            "Analyze All For Direction From Poses", self
+        )
         aAnalyzeAllPoseDirection.triggered.connect(self.analyzeAllPoseDirection)
         mAnalyze.addAction(aAnalyzeAllPoseDirection)
 
@@ -145,7 +150,7 @@ class Root(QtWidgets.QMainWindow):
     def analyzePoseDirection(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzePoseDirection(True)
-    
+
     @QtCore.Slot()
     def analyzeAllPoseDirection(self):
         if self.tabs.currentWidget() == self.imageTab:

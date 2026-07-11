@@ -58,9 +58,7 @@ class GalleryModel(QtCore.QAbstractListModel):
         return self.getById(self.results[index.row()])
 
     def getById(self, id: int) -> Image:
-        return self.session.scalar(
-            select(Image).where(Image.id == id)
-        )  # type: ignore[invalid-return-type]
+        return self.session.scalar(select(Image).where(Image.id == id))  # type: ignore
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -177,9 +175,6 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "session"):
             return
 
-        if not hasattr(self, "yoloModel"):
-            self.yoloModel = load_model("yolo26s.pt")
-
         images: list[Image] = []
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
@@ -191,14 +186,11 @@ class ImageTab(QtWidgets.QWidget):
         dialog = AnalyzeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
-    
+
     @QtCore.Slot()
     def analyzePoseDirection(self, filtered: bool):
         if not hasattr(self, "session"):
             return
-
-        if not hasattr(self, "yoloPoseModel"):
-            self.yoloPoseModel = load_model("yolo26s-pose.pt")
 
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
@@ -207,7 +199,7 @@ class ImageTab(QtWidgets.QWidget):
                 self.session.scalars(select(Image).order_by(Image.datetime).distinct())
             )
 
-        dialog = PoseDirectionDialog(self.session, self.yoloPoseModel, images)
+        dialog = PoseDirectionDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
