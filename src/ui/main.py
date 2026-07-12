@@ -2,6 +2,8 @@
 
 import os
 import sys
+import subprocess
+import platform
 
 from image_tab import ImageTab
 from entity_tab import EntitiesTab
@@ -11,7 +13,8 @@ from sqlalchemy.orm import Session
 
 import utility.parallel as upl
 from db import get_db
-from db.models import Image
+from db.models import Image, Entity
+from export_dialog import ExportDialog
 
 
 class Root(QtWidgets.QMainWindow):
@@ -98,23 +101,15 @@ class Root(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def fileExportFiltered(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(True, path[0])
+        dialog = ExportDialog(True)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def fileExportAll(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(False, path[0])
+        dialog = ExportDialog(False)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def selectAll(self):
@@ -153,6 +148,30 @@ class Root(QtWidgets.QMainWindow):
         if self.tabs.currentWidget() == self.entitiesTab:
             self.tabs.setCurrentWidget(self.imageTab)
         self.imageTab.focusImage(image)
+
+    @QtCore.Slot()
+    def doExport(self, mode: str, path: str, filtered: bool, interval: int, open: bool):
+        if not hasattr(self, "session"):
+            return
+
+        if mode == "images":
+            Image.export_to_csv(self.session, self.imageTab.getImages(filtered), path)
+        elif mode == "interval":
+            Image.export_to_csv(
+                self.session, self.imageTab.getImages(filtered), path, interval
+            )
+        else:
+            Entity.export_to_csv(
+                self.session, self.entitiesTab.getEntities(filtered), path
+            )
+
+        if open:
+            if platform.system() == "Darwin":
+                subprocess.call(("open", path))
+            elif platform.system() == "Windows":
+                subprocess.call(("start", path), shell=True)
+            else:
+                subprocess.call(("xdg-open", path))
 
 
 if __name__ == "__main__":
