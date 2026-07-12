@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from db.models import Entity, Image, Instance
 from detection.classes import CLASS_ID_MAPPING
+from bike_rider_merging_dialog import BikeRiderMergeDialog
 
 colors = (
     "#00ff00",
@@ -223,6 +224,7 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "session"):
             return
 
+        images: list[Image] = []
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
@@ -231,6 +233,23 @@ class ImageTab(QtWidgets.QWidget):
             )
 
         dialog = PoseDirectionDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
+    def mergeBikes(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        images: list[Image] = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = BikeRiderMergeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
