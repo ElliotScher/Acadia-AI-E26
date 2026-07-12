@@ -22,6 +22,7 @@ from ui.analyze_dialog import AnalyzeDialog
 
 from detection.bike_rider_merging import merge_bikes_riders
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
