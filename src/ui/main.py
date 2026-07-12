@@ -2,6 +2,8 @@
 
 import os
 import sys
+import subprocess
+import platform
 
 from image_tab import ImageTab
 from entity_tab import EntitiesTab
@@ -11,8 +13,9 @@ from sqlalchemy.orm import Session
 
 import utility.parallel as upl
 from db import get_db
-from db.models import Image
-
+from db.models import Image, Entity
+from export_dialog import ExportDialog
+from cluster_dialog import ClusterDialog
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -102,23 +105,15 @@ class Root(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def fileExportFiltered(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(True, path[0])
+        dialog = ExportDialog(True)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def fileExportAll(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(False, path[0])
+        dialog = ExportDialog(False)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def selectAll(self):
@@ -148,12 +143,16 @@ class Root(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def analyzeClustersFiltered(self):
         if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.analyzeClusters(True)
+            self.doAnalyzeClusters(self.imageTab.getImages(True))
+        else:
+            self.doAnalyzeClusters(self.entitiesTab.getEntities(True))
 
     @QtCore.Slot()
     def analyzeClustersAll(self):
         if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.analyzeClusters(False)
+            self.doAnalyzeClusters(self.imageTab.getImages(False))
+        else:
+            self.doAnalyzeClusters(self.entitiesTab.getEntities(False))
 
     def tabChanged(self):
         if self.tabs.currentWidget() == self.imageTab:
@@ -166,6 +165,49 @@ class Root(QtWidgets.QMainWindow):
         if self.tabs.currentWidget() == self.entitiesTab:
             self.tabs.setCurrentWidget(self.imageTab)
         self.imageTab.focusImage(image)
+
+    @QtCore.Slot()
+    def doExport(self, mode: str, path: str, filtered: bool, interval: int, open: bool):
+        if not hasattr(self, "session"):
+            return
+
+        if mode == "images":
+            Image.export_to_csv(self.session, self.imageTab.getImages(filtered), path)
+        elif mode == "interval":
+            Image.export_to_csv(
+                self.session, self.imageTab.getImages(filtered), path, interval
+            )
+        else:
+            Entity.export_to_csv(
+                self.session, self.entitiesTab.getEntities(filtered), path
+            )
+
+        if open:
+            if platform.system() == "Darwin":
+                subprocess.call(("open", path))
+            elif platform.system() == "Windows":
+                subprocess.call(("start", path), shell=True)
+            else:
+                subprocess.call(("xdg-open", path))
+    
+    @QtCore.Slot()
+    def doAnalyzeClusters(self, images: list[Image] | list[Entity]):
+        if not hasattr(self, "session"):
+            return
+        
+        if len(images) > 0 and isinstance(images[0], Entity):
+            actualImages: list[Image] = []
+            entity: Entity
+            for entity in images: # type: ignore
+                for instance in entity.get_instances(self.session):
+                    if instance.image not in actualImages:
+                        actualImages.append(instance.image)
+        else:
+            actualImages: list[Image] = images # type: ignore
+
+        dialog = ClusterDialog(self.session, actualImages)
+        dialog.accepted.connect(self.tabChanged)
+        dialog.exec()
 
 
 if __name__ == "__main__":

@@ -58,9 +58,7 @@ class GalleryModel(QtCore.QAbstractListModel):
         return self.getById(self.results[index.row()])
 
     def getById(self, id: int) -> Image:
-        return self.session.scalar(
-            select(Image).where(Image.id == id)
-        )  # type: ignore[invalid-return-type]
+        return self.session.scalar(select(Image).where(Image.id == id))  # type: ignore
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -171,53 +169,27 @@ class ImageTab(QtWidgets.QWidget):
         )
         self.count.setText(str(len(self.galleryModel.results)) + " images")
 
+    def getImages(self, filtered: bool) -> list[Image]:
+        if not hasattr(self, "session"):
+            return []
+
+        if filtered:
+            return list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            return list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
     @QtCore.Slot()
     def analyze(self, filtered: bool):
         if not hasattr(self, "session"):
             return
 
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
+        images = self.getImages(filtered)
 
         dialog = AnalyzeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
-
-    @QtCore.Slot()
-    def analyzeClusters(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = ClusterDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def export(self, filtered: bool, path: str):
-        if not hasattr(self, "session"):
-            return
-
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        Image.export_to_csv(self.session, images, path)
 
     @QtCore.Slot(Image)
     def focusImage(self, image: Image):

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from sympy.physics.quantum.sho1d import m
 from sqlalchemy import (
     String,
     DateTime,
@@ -111,34 +112,58 @@ class Image(Base):
             return None
 
     @staticmethod
-    def export_to_csv(session: Session, images: list[Image], path: str):
+    def export_to_csv(
+        session: Session, images: list[Image], path: str, interval: int = 0
+    ):
         with open(path, mode="w", newline="") as file:
             writer = csv.writer(file)
 
             header = ["date", "time"]
+            presentTypes = Instance.get_present_types(session)
             entityCounts: dict[int, int] = dict()
-            for present_type in Instance.get_present_types(session):
-                header.append(CLASS_ID_MAPPING[present_type] + " count")
-                entityCounts[present_type] = 0
+            for presentType in presentTypes:
+                header.append(CLASS_ID_MAPPING[presentType] + " count")
+                entityCounts[presentType] = 0
+
+            lastRangeTime: dt.datetime | None = None
+            row: None | list[str | int] = None
 
             writer.writerows([header])
             data = []
 
             for image in images:
-                row = [
-                    image.datetime.strftime("%Y-%m-%d"),
-                    image.datetime.strftime("%H:%M:%S"),
-                ]
+                rowTime: dt.datetime = image.datetime
+                if interval != 0:
+                    rowTime = rowTime - dt.timedelta(
+                        minutes=rowTime.minute % interval,
+                        seconds=rowTime.second,
+                        microseconds=rowTime.microsecond,
+                    )
+
+                if lastRangeTime != rowTime:
+                    if row is not None:
+                        for entity in entityCounts.keys():
+                            row.append(entityCounts[entity])
+                            entityCounts[entity] = 0
+                        data.append(row)
+
+                        if len(data) > 100:
+                            writer.writerows(data)
+                            data = []
+
+                    lastRangeTime = rowTime
+                    row = [
+                        rowTime.strftime("%Y-%m-%d"),
+                        rowTime.strftime("%H:%M:%S"),
+                    ]
+
                 for instance in image.get_instances(session):
                     entityCounts[instance.type_id] += 1
+
+            if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
-                    entityCounts[entity] = 0
                 data.append(row)
-
-                if len(data) > 100:
-                    writer.writerows(data)
-                    data = []
 
             if len(data) > 0:
                 writer.writerows(data)
@@ -203,6 +228,46 @@ class Entity(Base):
         return list(
             session.scalars(select(Entity).where(Entity.cluster == self.cluster)).all()
         )
+
+    @staticmethod
+    def export_to_csv(session: Session, entities: list[Entity], path: str):
+        with open(path, mode="w", newline="") as file:
+            writer = csv.writer(file)
+
+            header = [
+                "start date",
+                "start time",
+                "end date",
+                "end time",
+                "dwell time",
+                "type",
+            ]
+
+            writer.writerows([header])
+            data = []
+
+            for entity in entities:
+                earliestImage = entity.get_earliest_image(session)
+                latestImage = entity.get_latest_image(session)
+                row = [
+                    earliestImage.datetime.strftime("%Y-%m-%d"),
+                    earliestImage.datetime.strftime("%H:%M:%S"),
+                    latestImage.datetime.strftime("%Y-%m-%d"),
+                    latestImage.datetime.strftime("%H:%M:%S"),
+                    (dt.datetime(1970, 1, 1) + entity.get_timedelta(session)).strftime(
+                        "%H:%M:%S"
+                    ),
+                    CLASS_ID_MAPPING[entity.get_type_id(session)],
+                ]
+
+                data.append(row)
+
+                if len(data) > 100:
+                    writer.writerows(data)
+                    data = []
+
+            if len(data) > 0:
+                writer.writerows(data)
 
     def __repr__(self) -> str:
         return f"Entity({self.id})"
