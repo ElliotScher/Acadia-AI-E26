@@ -10,7 +10,8 @@ class EntityDateFilter(DateFilter):
     @QtCore.Slot()
     def makeFilter(self, query: Select) -> Select:
         return (
-            query.join(Entity.instances).join(Instance.image)
+            query.join(Entity.instances)
+            .join(Instance.image)
             .where(
                 and_(
                     Image.datetime >= self.startDate.dateTime().toPython(),
@@ -25,7 +26,8 @@ class EntityTimeFilter(TimeFilter):
     @QtCore.Slot()
     def makeFilter(self, query: Select) -> Select:
         return (
-            query.join(Entity.instances).join(Instance.image)
+            query.join(Entity.instances)
+            .join(Instance.image)
             .where(
                 and_(
                     Image.time >= self.startTime.time().toPython(),
@@ -53,7 +55,7 @@ class EntityTypeFilter(Filter):
     @QtCore.Slot()
     def makeFilter(self, query: Select) -> Select:
         if self.typeFilter.currentIndex() == len(CLASS_ID_MAPPING):
-            return query.where(Entity.ebike == True) # noqa
+            return query.where(Entity.ebike == True)  # noqa
         else:
             return query.join(Entity.instances).where(
                 Instance.type_id == self.typeFilter.currentIndex()

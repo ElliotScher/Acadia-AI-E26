@@ -1,4 +1,5 @@
 from __future__ import annotations
+from abc import abstractmethod
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import Select, union, intersect, select
 from datetime import datetime
@@ -34,7 +35,8 @@ class Filters(QtWidgets.QWidget):
     @QtCore.Slot()
     def makeFilter(self, *args):
         selects = []
-        for child in self.children():
+        child: Filter
+        for child in self.children():  # type: ignore
             if hasattr(child, "makeFilter") and not child.deleted:
                 selects.append(child.makeFilter(select(*args)))
         if len(selects) == 0:
@@ -50,7 +52,7 @@ class FilterRow(QtWidgets.QGroupBox):
     newFilterRow = QtCore.Signal()
     changed = QtCore.Signal()
 
-    def __init__(self, filterTypes, first=False, *args, **kwargs):
+    def __init__(self, filterTypes: list[Filter], first=False, *args, **kwargs):
         super().__init__("" if first else "or", *args, **kwargs)
 
         self.deleted = False
@@ -94,7 +96,7 @@ class FilterRow(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def removeFilterRow(self):
-        self.parentWidget().layout().removeWidget(self)
+        self.parentWidget().layout().removeWidget(self)  # type: ignore
         self.deleteLater()
         self.deleted = True
         self.changed.emit()
@@ -113,7 +115,7 @@ class FilterRow(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def newFilterSelected(self, action: QtGui.QAction):
-        newFilter = self.filterTypes[action.data()]()
+        newFilter: Filter = self.filterTypes[action.data()]()
         self.filterListLayout.addWidget(newFilter)
         self.filterListLayout.setAlignment(newFilter, QtCore.Qt.AlignmentFlag.AlignLeft)
         self.filterScroll.ensureWidgetVisible(newFilter)
@@ -122,8 +124,9 @@ class FilterRow(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
-        selects = []
-        for child in self.filterList.children():
+        selects: list[Select] = []
+        child: Filter
+        for child in self.filterList.children():  # type: ignore
             if hasattr(child, "makeFilter") and not child.deleted:
                 selects.append(child.makeFilter(query))
         if len(selects) == 0:
@@ -158,10 +161,14 @@ class Filter(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def deleteFilter(self):
-        self.parentWidget().layout().removeWidget(self)
+        self.parentWidget().layout().removeWidget(self)  # type: ignore
         self.deleteLater()
         self.deleted = True
         self.changed.emit()
+
+    @abstractmethod
+    def makeFilter(self, query: Select):
+        pass
 
 
 class TimeFilter(Filter):
