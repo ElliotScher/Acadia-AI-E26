@@ -21,6 +21,7 @@ from ui.analyze_dialog import AnalyzeDialog
 
 from detection.bike_rider_merging import merge_bikes_riders
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -83,9 +84,12 @@ class Root(QtWidgets.QMainWindow):
         mAnalyze.addAction(aAnalyzeClustersFiltered)
         aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
         aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
-        aMergeBikes = QtGui.QAction("Merge Bikes and Riders", self)
-        aMergeBikes.triggered.connect(self.analyzeMergeBikes)
-        mAnalyze.addAction(aMergeBikes)
+        aMergeBikesFiltered = QtGui.QAction("Merge Filtered Bikes and Riders", self)
+        aMergeBikesFiltered.triggered.connect(self.analyzeMergeBikesFiltered)
+        mAnalyze.addAction(aMergeBikesFiltered)
+        aMergeBikesAll = QtGui.QAction("Merge All Bikes and Riders", self)
+        aMergeBikesAll.triggered.connect(self.analyzeMergeBikesAll)
+        mAnalyze.addAction(aMergeBikesAll)
 
         aAnalyzePoseDirection = QtGui.QAction(
             "Analyze Filtered For Direction From Poses", self
@@ -148,11 +152,14 @@ class Root(QtWidgets.QMainWindow):
     def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
-    
+
     @QtCore.Slot()
-    def analyzeMergeBikes(self):
-        if hasattr(self, "session"):
-            merge_bikes_riders(self.session, 0.2)
+    def analyzeMergeBikesFiltered(self):
+        self.imageTab.mergeBikes(True)
+
+    @QtCore.Slot()
+    def analyzeMergeBikesAll(self):
+        self.imageTab.mergeBikes(False)
 
     @QtCore.Slot()
     def analyzeClustersFiltered(self):
