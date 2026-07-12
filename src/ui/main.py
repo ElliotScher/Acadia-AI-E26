@@ -20,6 +20,7 @@ from db import get_db
 from db.models import Entity, Image, Video
 from ui.analyze_dialog import AnalyzeDialog
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
