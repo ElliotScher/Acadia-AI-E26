@@ -10,11 +10,15 @@ groupDistance = 60
 
 # INSERT FILE PATH HERE
 inputPath = " "
-outputPath = "output"
+outputPath = " "
 extension = {".jpg"}
 
 batchLimit = None
 clearOutput = True
+
+# if False, skips drawing/saving annotated images entirely -- only the
+# structured results object gets built. Useful if you just want the data.
+saveAnnotatedImages = True
 
 # Deletes all contents of a folder (but keeps the folder itself).
 # Safe no-op if the folder doesn't exist yet.
@@ -114,6 +118,12 @@ def process_image(model, imagePaths, inputDIR, outputDIR):
         s["min"] = min(s["min"], conf)
         s["max"] = max(s["max"], conf)
 
+    # one entry per processed image with clusters -- this is the
+    # structured object returned alongside stats, e.g.:
+    # {"image": "IMG_0044.jpg", "path": "data/.../IMG_0044.jpg",
+    #  "clusters": [{"box": (x1,y1,x2,y2), "counts": {"person": 1, "bicycle": 1}}]}
+    results = []
+
     for i, imgPath in enumerate(imagePaths, 1): 
         try:
             result = model(str(imgPath), conf=confidence, verbose=False)[0]
@@ -136,21 +146,31 @@ def process_image(model, imagePaths, inputDIR, outputDIR):
             continue
 
         groups = groupDetections(detections)
-        annotated = draw_boxes(image, groups)
-        relative = imgPath.relative_to(inputDIR)
-        savePath = outputDIR / relative
-        savePath.parent.mkdir(parents=True, exist_ok=True)
-        cv.imwrite(str(savePath), annotated)
+
+        if saveAnnotatedImages:
+            annotated = draw_boxes(image, groups)
+            relative = imgPath.relative_to(inputDIR)
+            savePath = outputDIR / relative
+            savePath.parent.mkdir(parents=True, exist_ok=True)
+            cv.imwrite(str(savePath), annotated)
 
         classCounts = {}
-        for (_, _, _, _, counts) in groups:
+        clusterRecords = []
+        for (x1, y1, x2, y2, counts) in groups:
+            clusterRecords.append({"box": (x1, y1, x2, y2), "counts": counts})
             for label, count in counts.items():
                 classCounts[label] = classCounts.get(label, 0) + count
-        
+
+        results.append({
+            "image": imgPath.name,
+            "path": str(imgPath),
+            "clusters": clusterRecords,
+        })
+
         breakdown = ", ".join(f"{label}: {count}" for label, count in classCounts.items())
 
         print(f"[{i}/{total}] {imgPath.name}: {len(groups)} cluster(s) -- {breakdown}")
-    return stats
+    return stats, results
 
 def summary(stats):
     print("\n=== Detection Confidence Summary ===")
@@ -180,8 +200,13 @@ def main():
         imagePaths = imagePaths[:batchLimit]
     print(f"Found {len(imagePaths)} image(s) to process (batch limit = {batchLimit})")
     model = YOLO(yoloModel)
-    stats = process_image(model, imagePaths, inputDIR, outputDIR)
+    stats, results = process_image(model, imagePaths, inputDIR, outputDIR)
     summary(stats)
+    return results
 
 if __name__ == "__main__":
-    main()
+    results = main()
+    print(f"\n--- Sample result object ---")
+    print(f"Total images with clusters: {len(results)}")
+    if results:
+        print(results[0])
