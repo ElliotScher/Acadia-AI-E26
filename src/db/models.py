@@ -1,5 +1,4 @@
 from __future__ import annotations
-from sympy.physics.quantum.sho1d import m
 from sqlalchemy import (
     String,
     DateTime,
