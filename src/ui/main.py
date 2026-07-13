@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 import utility.parallel as upl
 from db import get_db
 from db.models import Image, Entity
-from export_dialog import ExportDialog
+from export_dialog import ExportDialog, ExportOptions
 from cluster_dialog import ClusterDialog
 
 class Root(QtWidgets.QMainWindow):
@@ -167,28 +167,28 @@ class Root(QtWidgets.QMainWindow):
         self.imageTab.focusImage(image)
 
     @QtCore.Slot()
-    def doExport(self, mode: str, path: str, filtered: bool, interval: int, open: bool):
+    def doExport(self, options: ExportOptions):
         if not hasattr(self, "session"):
             return
 
-        if mode == "images":
-            Image.export_to_csv(self.session, self.imageTab.getImages(filtered), path)
-        elif mode == "interval":
+        if options.mode == "images":
+            Image.export_to_csv(self.session, self.imageTab.getImages(options.filtered), options.path)
+        elif options.mode == "interval":
             Image.export_to_csv(
-                self.session, self.imageTab.getImages(filtered), path, interval
+                self.session, self.imageTab.getImages(options.filtered), options.path, options.interval
             )
         else:
             Entity.export_to_csv(
-                self.session, self.entitiesTab.getEntities(filtered), path
+                self.session, self.entitiesTab.getEntities(options.filtered), options.path
             )
 
         if open:
             if platform.system() == "Darwin":
-                subprocess.call(("open", path))
+                subprocess.call(("open", options.path))
             elif platform.system() == "Windows":
-                subprocess.call(("start", path), shell=True)
+                subprocess.call(("start", options.path), shell=True)
             else:
-                subprocess.call(("xdg-open", path))
+                subprocess.call(("xdg-open", options.path))
     
     @QtCore.Slot()
     def doAnalyzeClusters(self, images: list[Image] | list[Entity]):
