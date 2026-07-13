@@ -1,8 +1,19 @@
+from typing import Literal
+from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 
 
+@dataclass
+class ExportOptions:
+    mode: Literal["images"] | Literal["interval"] | Literal["entities"]
+    path: str
+    filtered: bool
+    interval: int
+    open: bool
+
+
 class ExportDialog(QtWidgets.QDialog):
-    startExport = QtCore.Signal(str, str, bool, int, bool)
+    startExport = QtCore.Signal(ExportOptions)
 
     def __init__(self, filtered: bool, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -65,11 +76,13 @@ class ExportDialog(QtWidgets.QDialog):
 
         if len(path[0]) > 0:
             self.startExport.emit(
-                mode,
-                path[0],
-                self.filtered,
-                self.exportModeIntervalTime.value(),
-                self.openExport.isChecked(),
+                ExportOptions(
+                    mode,
+                    path[0],
+                    self.filtered,
+                    self.exportModeIntervalTime.value(),
+                    self.openExport.isChecked(),
+                )
             )
 
         self.accept()
