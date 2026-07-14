@@ -1,12 +1,11 @@
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select, Select, func, union
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from datetime import datetime, time
 
 from detection.yolo import CLASS_ID_MAPPING
-from db.models import Image, Instance
+from db.models import Image, Instance, Entity
 from filters import Filters
 from filters.image import (
     EntityFilter,
@@ -104,6 +103,7 @@ class GalleryModel(QtCore.QAbstractListModel):
 
 class ImageTab(QtWidgets.QWidget):
     session: Session
+    entityOpened = QtCore.Signal(Entity)
 
     def __init__(self):
         super().__init__()
@@ -131,6 +131,7 @@ class ImageTab(QtWidgets.QWidget):
 
         layout.addWidget(gallerySide)
         self.imageInfo = ImageInfo()
+        self.imageInfo.entityOpened.connect(self.entityOpened.emit)
         layout.addWidget(self.imageInfo)
 
     @QtCore.Slot()
@@ -138,7 +139,9 @@ class ImageTab(QtWidgets.QWidget):
         selection: list[Image] = list(
             map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
         )
-        self.imageInfo.showinfo(selection, self.session)
+        self.imageInfo.showImage(
+            selection[0] if len(selection) > 0 else None, self.session
+        )
 
     @QtCore.Slot()
     def setsession(self, session: Session):
@@ -201,9 +204,7 @@ class ImageTab(QtWidgets.QWidget):
             if self.galleryModel.canFetchMore(QtCore.QModelIndex()):
                 self.galleryModel.fetchMore(QtCore.QModelIndex())
             else:
-                break
-        if i >= self.galleryModel.rowCount():
-            raise Exception(f"Failed to find {image} in the image tab. Yikes!")
+                raise Exception(f"Failed to find {image} in the image tab. Yikes!")
         index = self.galleryModel.index(i, 0)
         self.gallery.scrollTo(index)
         self.gallery.selectionModel().select(
@@ -236,6 +237,8 @@ class ImageGallery(QtWidgets.QListView):
 
 
 class ImageInfo(QtWidgets.QGroupBox):
+    entityOpened = QtCore.Signal(Entity)
+
     def __init__(self):
         super().__init__()
         self.setTitle("Image Info")
@@ -256,54 +259,66 @@ class ImageInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.info)
         self.info.hide()
 
-    def showinfo(self, images: list[Image], session: Session):
-        if len(images) == 1:
-            self.showone(images[0], session)
-            self.viewer.show()
-        elif len(images) > 1:
-            self.showmultiple(images)
-            self.viewer.hide()
+    def showImage(self, image: Image | None, session: Session):
+        if image:
+            self.showInfo(image, session)
         else:
             self.info.hide()
             self.viewer.hide()
             self.placeholder.show()
 
-    def showone(self, image: Image, session: Session):
+    def showInfo(self, image: Image, session: Session):
         instances = image.get_instances(session)
-        instancesText = ""
+        self.entities.clear()
+
+        def makeEntityButton(
+            entity: Entity,
+        ):  # this has to be a function to capture the entity in the lambda
+            button = QtWidgets.QPushButton()
+            button.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ViewFullscreen))
+            button.setIconSize(QtCore.QSize(15, 15))
+            button.setFixedSize(QtCore.QSize(25, 25))
+            button.clicked.connect(lambda: self.entityOpened.emit(entity))
+            return button
+
         for i in range(len(instances)):
             instance = instances[i]
-            instancesText += (
-                '<font color="'
-                + colors[i % len(colors)]
-                + '">'
-                + CLASS_ID_MAPPING[instance.type_id].title()
-                + " "
-                + str(round(instance.confidence * 10000) / 100)
-                + "% confidence</font><br>"
+            widget = QtWidgets.QWidget(self.entities)
+            widget.setFixedHeight(40)
+            layout = QtWidgets.QHBoxLayout(widget)
+            tlabel = QtWidgets.QLabel(
+                f"<font color={colors[i % len(colors)]}>{CLASS_ID_MAPPING[instance.type_id]}</font>",
+                widget,
             )
-
+            layout.addWidget(tlabel)
+            c = instance.confidence
+            color = (
+                f"#{int(30 * c + 255 * (1 - c)):02x}{int(255 * c + 30 * (1 - c)):02x}1e"
+            )
+            clabel = QtWidgets.QLabel(f"<font color={color}>{c:0.2%}</font> ", widget)
+            layout.addWidget(clabel)
+            button = makeEntityButton(instance.entity)
+            layout.addWidget(button)
+            item = QtWidgets.QListWidgetItem()
+            item.setSizeHint(QtCore.QSize(200, 40))
+            self.entities.addItem(item)
+            self.entities.setItemWidget(item, widget)
         self.viewer.set(image, instances)
-        self.imgcount.setText("1 selected.\n")
         self.imgdate.setText(image.datetime.strftime("%Y-%m-%d %H:%M:%S"))
-        self.imginstances.setText(instancesText)
         self.info.show()
-        self.placeholder.hide()
-
-    def showmultiple(self, images: list[Image]):
-        self.imgcount.setText(f"{len(images)} selected.")
-        self.info.show()
+        self.viewer.show()
         self.placeholder.hide()
 
     def buildinfo(self) -> QtWidgets.QWidget:
-        widget = QtWidgets.QWidget()
+        widget = QtWidgets.QWidget(self)
         layout = QtWidgets.QVBoxLayout(widget)
-        self.imgcount = QtWidgets.QLabel("THE IMAGE INFO BOX :)")
-        layout.addWidget(self.imgcount)
-        self.imgdate = QtWidgets.QLabel("A long time ago...")
+        self.imgdate = QtWidgets.QLabel("A long time ago...", widget)
         layout.addWidget(self.imgdate)
-        self.imginstances = QtWidgets.QLabel()
-        layout.addWidget(self.imginstances)
+        self.entities = QtWidgets.QListWidget(widget)
+        layout.addWidget(self.entities)
+        self.entities.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.NoSelection
+        )
         return widget
 
 

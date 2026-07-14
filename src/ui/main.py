@@ -31,6 +31,7 @@ class Root(QtWidgets.QMainWindow):
 
         self.imageTab = ImageTab()
         self.entitiesTab = EntitiesTab()
+        self.imageTab.entityOpened.connect(self.openEntity)
         self.entitiesTab.imageOpened.connect(self.openImage)
 
         self.tabs = QtWidgets.QTabWidget()
@@ -165,6 +166,12 @@ class Root(QtWidgets.QMainWindow):
         if self.tabs.currentWidget() == self.entitiesTab:
             self.tabs.setCurrentWidget(self.imageTab)
         self.imageTab.focusImage(image)
+
+    @QtCore.Slot()
+    def openEntity(self, entity: Entity):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.tabs.setCurrentWidget(self.entitiesTab)
+        self.entitiesTab.focusEntity(entity)
 
     @QtCore.Slot()
     def doExport(self, options: ExportOptions):
