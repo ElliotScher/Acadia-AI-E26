@@ -72,19 +72,6 @@ class Root(QtWidgets.QMainWindow):
         aMergeBikesAll.triggered.connect(self.analyzeMergeBikesAll)
         mAnalyze.addAction(aMergeBikesAll)
 
-        mSelect = self.menuBar().addMenu("Select")
-        aSelectAll = QtGui.QAction("Select All", self)
-        aSelectAll.triggered.connect(self.selectAll)
-        aSelectAll.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
-        mSelect.addAction(aSelectAll)
-        aSelectDeselect = QtGui.QAction("Deselect All", self)
-        aSelectDeselect.triggered.connect(self.imageTab.gallery.clearSelection)
-        aSelectDeselect.setShortcut(QtGui.QKeySequence.StandardKey.Deselect)
-        mSelect.addAction(aSelectDeselect)
-        aSelectInvert = QtGui.QAction("Invert Selection", self)
-        aSelectInvert.triggered.connect(self.selectInverse)
-        mSelect.addAction(aSelectInvert)
-
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
@@ -117,21 +104,6 @@ class Root(QtWidgets.QMainWindow):
         if len(path[0]) > 0 and hasattr(self, "session"):
             if isImages:
                 self.imageTab.export(False, path[0])
-
-    @QtCore.Slot()
-    def selectAll(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.gallery.selectAll()
-
-    @QtCore.Slot()
-    def selectDeselect(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.gallery.clearSelection()
-
-    @QtCore.Slot()
-    def selectInverse(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.gallery.invertSelection()
 
     @QtCore.Slot()
     def analyzeFiltered(self):

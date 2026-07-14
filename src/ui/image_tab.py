@@ -1,23 +1,23 @@
 import typing
 
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select, Select, func, union
-from sqlalchemy.orm import Session
-from datetime import datetime, time
-
-from detection.yolo import CLASS_ID_MAPPING
-from db.models import Image, Instance
-from filters import Filters
-from filters.image import (
-    EntityFilter,
-    NoEntityFilter,
-    ImageTimeFilter,
-    ImageDateFilter,
-    AnalyzedFilter,
-    NotAnalyzedFilter,
-)
 from analyze_dialog import AnalyzeDialog
 from bike_rider_merging_dialog import BikeRiderMergeDialog
+from filters import Filters
+from filters.image import (
+    AnalyzedFilter,
+    EntityFilter,
+    ImageDateFilter,
+    ImageTimeFilter,
+    NoEntityFilter,
+    NotAnalyzedFilter,
+)
+
+from PySide6 import QtCore, QtGui, QtWidgets
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from db.models import Image, Instance
+from detection.yolo import CLASS_ID_MAPPING
 
 colors = (
     "#00ff00",
@@ -54,28 +54,28 @@ class GalleryModel(QtCore.QAbstractListModel):
 
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
-    ) -> Image:
+    ) -> Image | None:
         return self.getById(self.results[index.row()])
 
-    def getById(self, id: int) -> Image:
-        return self.session.scalar(
-            select(Image).where(Image.id == id)
-        )  # type: ignore[invalid-return-type]
+    def getById(self, id: int) -> Image | None:
+        return self.session.scalar(select(Image).where(Image.id == id))
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
     ) -> typing.Any:
-        if role == QtCore.Qt.ItemDataRole.DecorationRole:
-            data = self.getByIndex(index)
-            if data:
-                if data.id in self.thumbnails:
-                    return self.thumbnails[data.id]
-                else:
-                    if len(self.thumbnails) > 300:
-                        self.thumbnails: dict[int, QtGui.QIcon] = dict()
-                    img = QtGui.QIcon(data.path)
-                    self.thumbnails[data.id] = img
-                    return img
+        if role != QtCore.Qt.ItemDataRole.DecorationRole:
+            return
+        data = self.getByIndex(index)
+        if not data:
+            return
+        if data.id in self.thumbnails:
+            return self.thumbnails[data.id]
+        else:
+            if len(self.thumbnails) > 300:
+                self.thumbnails: dict[int, QtGui.QIcon] = dict()
+            img = QtGui.QIcon(data.path)
+            self.thumbnails[data.id] = img
+            return img
 
     def rowCount(
         self,
@@ -138,15 +138,15 @@ class ImageTab(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def newselection(self):
-        selection: list[Image] = list(
-            map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
-        )
-        self.imageInfo.showinfo(selection, self.session)
+        selection = self.gallery.selectedIndexes()
+        image: Image | None = None
+        if len(selection) > 0:
+            image = self.galleryModel.getByIndex(selection[0])
+        self.imageInfo.showinfo(image, self.session)
 
     @QtCore.Slot()
     def setsession(self, session: Session):
         self.session = session
-
         self.refreshGallery()
 
     @QtCore.Slot()
@@ -229,19 +229,10 @@ class ImageGallery(QtWidgets.QListView):
         self.setViewMode(self.ViewMode.IconMode)
         self.setVerticalScrollMode(self.ScrollMode.ScrollPerPixel)
         self.setResizeMode(self.ResizeMode.Adjust)
-        self.setSelectionMode(self.SelectionMode.MultiSelection)
+        self.setSelectionMode(self.SelectionMode.SingleSelection)
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
-
-    @QtCore.Slot()
-    def invertSelection(self):
-        first = self.model().createIndex(0, 0)
-        last = self.model().createIndex(self.model().rowCount() - 1, 0)
-        self.selectionModel().select(
-            QtCore.QItemSelection(first, last),
-            self.selectionModel().SelectionFlag.Toggle,
-        )
 
 
 class ImageInfo(QtWidgets.QGroupBox):
@@ -265,19 +256,16 @@ class ImageInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.info)
         self.info.hide()
 
-    def showinfo(self, images: list[Image], session: Session):
-        if len(images) == 1:
-            self.showone(images[0], session)
+    def showinfo(self, image: Image | None, session: Session):
+        if image:
+            self.showImg(image, session)
             self.viewer.show()
-        elif len(images) > 1:
-            self.showmultiple(images)
-            self.viewer.hide()
         else:
             self.info.hide()
             self.viewer.hide()
             self.placeholder.show()
 
-    def showone(self, image: Image, session: Session):
+    def showImg(self, image: Image, session: Session):
         instances = image.get_instances(session)
         instancesText = ""
         for i in range(len(instances)):
@@ -293,22 +281,14 @@ class ImageInfo(QtWidgets.QGroupBox):
             )
 
         self.viewer.set(image, instances)
-        self.imgcount.setText("1 selected.\n")
         self.imgdate.setText(image.datetime.strftime("%Y-%m-%d %H:%M:%S"))
         self.imginstances.setText(instancesText)
-        self.info.show()
-        self.placeholder.hide()
-
-    def showmultiple(self, images: list[Image]):
-        self.imgcount.setText(f"{len(images)} selected.")
         self.info.show()
         self.placeholder.hide()
 
     def buildinfo(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        self.imgcount = QtWidgets.QLabel("THE IMAGE INFO BOX :)")
-        layout.addWidget(self.imgcount)
         self.imgdate = QtWidgets.QLabel("A long time ago...")
         layout.addWidget(self.imgdate)
         self.imginstances = QtWidgets.QLabel()
