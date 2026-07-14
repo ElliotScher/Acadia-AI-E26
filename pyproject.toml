@@ -21,6 +21,7 @@ dependencies = [
     "fast-plate-ocr[onnx]>=1.1.0",
     "mediapipe>=0.10.35",
     "av>=17.1.0",
+    "matplotlib>=3.10.0",
 ]
 
 [tool.pytest.ini_options]

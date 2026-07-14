@@ -7,6 +7,7 @@ entities chronologically across images to compute occupancy.
 """
 
 import argparse
+import csv
 from dataclasses import dataclass
 import datetime
 import json
@@ -18,6 +19,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from utility import imgutils
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 class Direction(Enum):
@@ -660,8 +666,9 @@ def calculate_occupancy_timeline(
         exit_entities (Dict[int, List[ProfileRecord]]): Exit entities grouped by ID.
 
     Returns:
-        List[Dict[str, Any]]: Chronologically sorted list of timeline states representing
-            the running occupancy counts.
+        List[Dict[str, Any]]: Chronologically sorted list of timeline states, each
+            with the running "occupancy" as well as "entered_total" and
+            "exited_total" cumulative counts up to and including that event.
     """
     events = []
     for ent_id, records in entry_entities.items():
@@ -689,18 +696,139 @@ def calculate_occupancy_timeline(
     initial_offset = -min_running if min_running < 0 else 0
 
     current_occupancy = initial_offset
+    entered_total = 0
+    exited_total = 0
     timeline = []
     for event in raw_timeline:
         current_occupancy += event["change"]
+        if event["change"] > 0:
+            entered_total += 1
+        else:
+            exited_total += 1
         timeline.append(
             {
                 "timestamp": event["timestamp"],
                 "occupancy": current_occupancy,
                 "label": event["label"],
+                "entered_total": entered_total,
+                "exited_total": exited_total,
             }
         )
 
     return timeline
+
+
+def save_occupancy_csv(
+    timeline: List[Dict[str, Any]], filepath: Union[str, Path]
+) -> None:
+    """
+    Writes the occupancy timeline to a CSV file, one row per entry/exit event.
+
+    Args:
+        timeline (List[Dict[str, Any]]): Chronological timeline records, as
+            returned by `calculate_occupancy_timeline`.
+        filepath (Union[str, Path]): Target output CSV file path.
+    """
+    with open(filepath, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "timestamp",
+                "datetime",
+                "event",
+                "entered_total",
+                "exited_total",
+                "occupancy",
+            ]
+        )
+        for event in timeline:
+            ts = event["timestamp"]
+            iso = (
+                datetime.datetime.fromtimestamp(ts).isoformat()
+                if ts is not None
+                else ""
+            )
+            writer.writerow(
+                [
+                    ts,
+                    iso,
+                    event["label"],
+                    event["entered_total"],
+                    event["exited_total"],
+                    event["occupancy"],
+                ]
+            )
+    logger.info("Saved occupancy CSV to %s", filepath)
+
+
+def save_occupancy_graph(
+    timeline: List[Dict[str, Any]], filepath: Union[str, Path]
+) -> None:
+    """
+    Renders and saves a chart of occupancy and cumulative entries/exits over time.
+
+    Args:
+        timeline (List[Dict[str, Any]]): Chronological timeline records, as
+            returned by `calculate_occupancy_timeline`.
+        filepath (Union[str, Path]): Target output image file path (e.g. .png).
+    """
+    if not timeline:
+        logger.warning("Occupancy timeline is empty; skipping graph generation.")
+        return
+
+    timestamps = [datetime.datetime.fromtimestamp(e["timestamp"]) for e in timeline]
+    occupancy = [e["occupancy"] for e in timeline]
+    entered = [e["entered_total"] for e in timeline]
+    exited = [e["exited_total"] for e in timeline]
+
+    fig, ax = plt.subplots(figsize=(9, 5), dpi=150)
+    fig.patch.set_facecolor("#fcfcfb")
+    ax.set_facecolor("#fcfcfb")
+
+    ax.step(
+        timestamps,
+        occupancy,
+        where="post",
+        color="#1a73e8",
+        linewidth=2,
+        label="Occupancy",
+    )
+    ax.plot(
+        timestamps,
+        entered,
+        color="#34a853",
+        linewidth=1.2,
+        linestyle="--",
+        label="Cumulative entries",
+    )
+    ax.plot(
+        timestamps,
+        exited,
+        color="#ea4335",
+        linewidth=1.2,
+        linestyle="--",
+        label="Cumulative exits",
+    )
+
+    ax.set_xlabel("Time", color="#52514e")
+    ax.set_ylabel("Count", color="#52514e")
+    ax.set_title(
+        "Occupancy Over Time", color="#0b0b0b", fontsize=13, fontweight="bold", pad=12
+    )
+    ax.tick_params(colors="#52514e")
+    ax.grid(True, which="major", axis="both", color="#e3e2dd", linewidth=0.6, zorder=0)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color("#c3c2b7")
+    ax.legend(frameon=False, loc="upper left", labelcolor="#0b0b0b")
+
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(str(filepath), facecolor=fig.get_facecolor())
+    plt.close(fig)
+    logger.info("Saved occupancy graph to %s", filepath)
 
 
 def extract_features_for_directory(
@@ -896,6 +1024,8 @@ def run_entry_exit_profiling(
     cores: int = 1,
     db_save: Optional[str] = None,
     report: Optional[str] = None,
+    occupancy_csv: Optional[str] = None,
+    occupancy_graph: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Unified entry/exit occupancy profiling workflow.
@@ -924,6 +1054,8 @@ def run_entry_exit_profiling(
         cores (int): Number of parallel CPU threads to extract features. Defaults to 1.
         db_save (Optional[str]): Filepath to serialize final ProfileDatabase. Defaults to None.
         report (Optional[str]): Filepath to save summary JSON report. Defaults to None.
+        occupancy_csv (Optional[str]): Filepath to save the occupancy timeline as CSV. Defaults to None.
+        occupancy_graph (Optional[str]): Filepath to save an occupancy-over-time chart image. Defaults to None.
 
     Returns:
         Dict[str, Any]: The summary report dict containing profiling results and stats.
@@ -1075,9 +1207,24 @@ def run_entry_exit_profiling(
     max_occ = max([t["occupancy"] for t in timeline]) if timeline else 0
     summary_report["statistics"]["maximum_occupancy"] = max_occ
 
+    total_entered = timeline[-1]["entered_total"] if timeline else 0
+    total_exited = timeline[-1]["exited_total"] if timeline else 0
+    summary_report["statistics"]["total_entered"] = total_entered
+    summary_report["statistics"]["total_exited"] = total_exited
+
     print("\n--- Occupancy Summary ---")
+    print(f"Total Entered: {total_entered}")
+    print(f"Total Exited: {total_exited}")
     print(f"Maximum Running Occupancy: {max_occ}")
     print("Occupancy profiling complete!\n")
+
+    # Save occupancy timeline CSV if requested
+    if occupancy_csv:
+        save_occupancy_csv(timeline, occupancy_csv)
+
+    # Save occupancy timeline graph if requested
+    if occupancy_graph:
+        save_occupancy_graph(timeline, occupancy_graph)
 
     # Annotate and save images if output_dir is specified
     if output_dir:
@@ -1236,6 +1383,20 @@ def main() -> None:
         default=None,
         help="Maximum time gap (in seconds) between sequential detections to allow matching.",
     )
+    parser.add_argument(
+        "--occupancy-csv",
+        type=str,
+        default=None,
+        help="Path to save the occupancy timeline (entries, exits, running occupancy) as CSV. "
+        "Only applies to dual-camera --entry-dir/--exit-dir mode.",
+    )
+    parser.add_argument(
+        "--occupancy-graph",
+        type=str,
+        default=None,
+        help="Path to save a chart image (e.g. .png) of occupancy and cumulative entries/exits "
+        "over time. Only applies to dual-camera --entry-dir/--exit-dir mode.",
+    )
 
     from src.utility.loggingutils import setup_logging_and_paths
 
@@ -1264,12 +1425,20 @@ def main() -> None:
             cores=args.cores,
             db_save=args.db_save,
             report=args.report,
+            occupancy_csv=args.occupancy_csv,
+            occupancy_graph=args.occupancy_graph,
         )
     else:
         # Run standard single-camera workflow
         if not input_folder:
             logger.error("Must specify input_dir for single-camera profiling mode.")
             sys.exit(1)
+
+        if args.occupancy_csv or args.occupancy_graph:
+            logger.warning(
+                "--occupancy-csv/--occupancy-graph require dual-camera "
+                "--entry-dir/--exit-dir mode; ignoring in single-camera mode."
+            )
 
         allowed_categories = [cat.strip().lower() for cat in args.categories.split(",")]
         all_images = [
