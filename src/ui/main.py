@@ -89,15 +89,13 @@ class Root(QtWidgets.QMainWindow):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        self.imageTab.setsession(self.session)
-        self.entitiesTab.setsession(self.session)
-        # self.imageTab.setsession(self.session)
 
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
         thread = upl.Async("File Open", lambda: self._fileOpen(path))
         thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.finished.connect(lambda: self.entitiesTab.setsession(self.session))
         thread.start()
 
     @QtCore.Slot()
