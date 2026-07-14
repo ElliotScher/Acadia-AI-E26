@@ -5,10 +5,29 @@ from sqlalchemy import exists, and_
 from db.models import Image, Entity, Instance
 from datetime import datetime
 
+image1: Image
+image2: Image
+image3: Image
+image4: Image
+entity1: Entity
+entity2: Entity
+entity3: Entity
+entity4: Entity
+entity5: Entity
+instance1: Instance
+instance2: Instance
+instance3: Instance
+instance4: Instance
+instance5: Instance
+instance6: Instance
+instance7: Instance
+instance8: Instance
+instance9: Instance
+
 
 @fixture()
 def test_session():
-    global image1, image2, image3, image4, entity1, entity2, entity3, entity4, entity5, instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8, instance7
+    global image1, image2, image3, image4, entity1, entity2, entity3, entity4, entity5, instance1, instance2, instance3, instance4, instance5, instance6, instance7, instance8, instance9
 
     # create in-memory database for testing
     db = get_db(None)
@@ -147,18 +166,20 @@ def test_session():
 
 
 def test_image(test_session: Session):
-    instances: List[Instance] = image1.get_instances(test_session)
+    instances: list[Instance] = image1.get_instances(test_session)
     assert len(instances) == 2
     assert instances[0].entity_id == entity1.id
     assert instances[1].entity_id == entity2.id
 
-    entities: List[Entity] = image1.get_entities(test_session)
+    entities: list[Entity] = image1.get_entities(test_session)
     assert len(entities) == 2
     assert entities[0].id == entity1.id
     assert entities[1].id == entity2.id
 
-    assert Image.get_earliest_image(test_session).id == image1.id
-    assert Image.get_latest_image(test_session).id == image4.id
+    earliestImage = Image.get_earliest_image(test_session)
+    assert earliestImage is not None and earliestImage.id == image1.id
+    latestImage = Image.get_latest_image(test_session)
+    assert latestImage is not None and latestImage.id == image4.id
     test_session.delete(image1)
     test_session.delete(image2)
     test_session.delete(image3)
@@ -168,7 +189,7 @@ def test_image(test_session: Session):
 
 
 def test_entity(test_session: Session):
-    instances: List[Instance] = entity1.get_instances(test_session)
+    instances: list[Instance] = entity1.get_instances(test_session)
     assert len(instances) == 2
     assert instances[0].image_id == image1.id
     assert instances[1].image_id == image2.id
@@ -181,7 +202,7 @@ def test_entity(test_session: Session):
     assert entity1.get_timedelta(test_session).total_seconds() == 2
     assert entity5.get_timedelta(test_session).total_seconds() == 0
 
-    entities_in_cluster: List[Entity] = entity1.get_entities_in_cluster(test_session)
+    entities_in_cluster: list[Entity] = entity1.get_entities_in_cluster(test_session)
     assert len(entities_in_cluster) == 2
     assert entities_in_cluster[0].id == entity1.id
     assert entities_in_cluster[1].id == entity2.id
@@ -316,7 +337,7 @@ def test_transfer_entity(test_session: Session):
     test_session.add(instance10)
     test_session.commit()
 
-    instances: List[Instance] = entity5.get_instances(test_session)
+    instances: list[Instance] = entity5.get_instances(test_session)
     assert len(instances) == 2
     assert instances[0].image_id == image4.id
     assert instances[1].image_id == image5.id

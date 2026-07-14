@@ -76,7 +76,6 @@ class EntityFilter(Filter):
         self.thisLayout.insertWidget(2, self.maxFilter)
 
         self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilterMap = dict()
         self.typeFilter.addItems(["Anything"])
         for typeId in CLASS_ID_MAPPING:
             self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title()])
@@ -151,7 +150,6 @@ class NoEntityFilter(Filter):
         self.thisLayout.insertWidget(0, QtWidgets.QLabel("No"))
 
         self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilterMap = dict()
         for typeId in CLASS_ID_MAPPING:
             self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title()])
         self.typeFilter.setMinimumWidth(100)

@@ -21,9 +21,8 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
-from datetime import datetime, timedelta, time
+import datetime as dt
 import os
-from pathlib import Path
 import csv
 
 from detection.yolo import process_single_image, CLASS_ID_MAPPING
@@ -37,9 +36,9 @@ class Image(Base):
     __tablename__ = "image"
     id: Mapped[int] = mapped_column(primary_key=True)
     path: Mapped[str] = mapped_column(String(), unique=True, nullable=False)
-    datetime: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    datetime: Mapped[dt.datetime] = mapped_column(DateTime(), nullable=False)
     analyzed: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
-    time: Mapped[time] = mapped_column(Time(), nullable=False)
+    time: Mapped[dt.time] = mapped_column(Time(), nullable=False)
 
     instances: WriteOnlyMapped["Instance"] = relationship(
         back_populates="image",
@@ -50,45 +49,22 @@ class Image(Base):
 
     def __init__(self, **kwargs):
         super(Image, self).__init__(**kwargs)
-        if self.time is None:
-            self.time = time(
+        if (
+            self.time is None
+        ):  # editor may say code is unreachable, necessary for migrations
+            self.time = dt.time(
                 self.datetime.hour, self.datetime.minute, self.datetime.second
             )
 
     def get_instances(self, session: Session) -> list["Instance"]:
-        return session.scalars(self.instances.select()).all()
+        return list(session.scalars(self.instances.select()).all())
 
-    def get_entities(self, session: Session) -> list["Instance"]:
-        return session.scalars(
-            select(Entity).join(Instance).where(Instance.image_id == self.id)
-        ).all()
-
-    def analyze(self, session: Session, model, conf, classes):
-        if self.analyzed:
-            for instance in self.get_instances(session):
-                session.delete(instance)
-
-        detections = process_single_image(
-            model, Path(self.path).resolve(), Path(), Path(), False, conf, classes
+    def get_entities(self, session: Session) -> list["Entity"]:
+        return list(
+            session.scalars(
+                select(Entity).join(Instance).where(Instance.image_id == self.id)
+            ).all()
         )
-
-        for detection in detections:
-            entity = Entity()
-            instance = Instance(
-                image=self,
-                entity=entity,
-                x=detection.box[0],
-                y=detection.box[1],
-                width=detection.box[2] - detection.box[0],
-                height=detection.box[3] - detection.box[1],
-                type_id=detection.cls_id,
-                confidence=detection.conf,
-            )
-            session.add_all((entity, instance))
-
-        self.analyzed = True
-        session.add(self)
-        session.commit()
 
     @staticmethod
     def import_from_dir(session: Session, dir: str):
@@ -106,7 +82,8 @@ class Image(Base):
                     continue
 
                 image = Image(
-                    path=path, datetime=datetime.fromtimestamp(os.path.getmtime(path))
+                    path=path,
+                    datetime=dt.datetime.fromtimestamp(os.path.getmtime(path)),
                 )
                 session.add(image)
         session.commit()
@@ -130,34 +107,58 @@ class Image(Base):
             return None
 
     @staticmethod
-    def export_to_csv(session: Session, images: list[Image], path: str):
+    def export_to_csv(
+        session: Session, images: list[Image], path: str, interval: int = 0
+    ):
         with open(path, mode="w", newline="") as file:
             writer = csv.writer(file)
 
             header = ["date", "time"]
+            presentTypes = Instance.get_present_types(session)
             entityCounts: dict[int, int] = dict()
-            for present_type in Instance.get_present_types(session):
-                header.append(CLASS_ID_MAPPING[present_type] + " count")
-                entityCounts[present_type] = 0
+            for presentType in presentTypes:
+                header.append(CLASS_ID_MAPPING[presentType] + " count")
+                entityCounts[presentType] = 0
+
+            lastRangeTime: dt.datetime | None = None
+            row: None | list[str | int] = None
 
             writer.writerows([header])
             data = []
 
             for image in images:
-                row = [
-                    image.datetime.strftime("%Y-%m-%d"),
-                    image.datetime.strftime("%H:%M:%S"),
-                ]
+                rowTime: dt.datetime = image.datetime
+                if interval != 0:
+                    rowTime = rowTime - dt.timedelta(
+                        minutes=rowTime.minute % interval,
+                        seconds=rowTime.second,
+                        microseconds=rowTime.microsecond,
+                    )
+
+                if lastRangeTime != rowTime:
+                    if row is not None:
+                        for entity in entityCounts.keys():
+                            row.append(entityCounts[entity])
+                            entityCounts[entity] = 0
+                        data.append(row)
+
+                        if len(data) > 100:
+                            writer.writerows(data)
+                            data = []
+
+                    lastRangeTime = rowTime
+                    row = [
+                        rowTime.strftime("%Y-%m-%d"),
+                        rowTime.strftime("%H:%M:%S"),
+                    ]
+
                 for instance in image.get_instances(session):
                     entityCounts[instance.type_id] += 1
+
+            if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
-                    entityCounts[entity] = 0
                 data.append(row)
-
-                if len(data) > 100:
-                    writer.writerows(data)
-                    data = []
 
             if len(data) > 0:
                 writer.writerows(data)
@@ -182,7 +183,7 @@ class Entity(Base):
     )
 
     def get_instances(self, session: Session) -> list["Instance"]:
-        return session.scalars(self.instances.select()).all()
+        return list(session.scalars(self.instances.select()).all())
 
     def get_type_id(self, session: Session) -> int:
         return session.scalars(self.instances.select().limit(1)).one().type_id
@@ -205,21 +206,63 @@ class Entity(Base):
             .limit(1)
         ).one()
 
-    def get_timedelta(self, session: Session) -> timedelta:
-        images: List[Image] = session.scalars(
-            select(Image)
-            .join(Instance)
-            .where(Instance.entity_id == self.id)
-            .order_by(desc(Image.datetime))
-        ).all()
+    def get_timedelta(self, session: Session) -> dt.timedelta:
+        images: list[Image] = list(
+            session.scalars(
+                select(Image)
+                .join(Instance)
+                .where(Instance.entity_id == self.id)
+                .order_by(desc(Image.datetime))
+            ).all()
+        )
         if len(images) < 2:
-            return timedelta()
+            return dt.timedelta()
         return images[0].datetime - images[-1].datetime
 
     def get_entities_in_cluster(self, session: Session) -> list["Entity"]:
-        return session.scalars(
-            select(Entity).where(Entity.cluster == self.cluster)
-        ).all()
+        return list(
+            session.scalars(select(Entity).where(Entity.cluster == self.cluster)).all()
+        )
+
+    @staticmethod
+    def export_to_csv(session: Session, entities: list[Entity], path: str):
+        with open(path, mode="w", newline="") as file:
+            writer = csv.writer(file)
+
+            header = [
+                "start date",
+                "start time",
+                "end date",
+                "end time",
+                "dwell time",
+                "type",
+            ]
+
+            writer.writerows([header])
+            data = []
+
+            for entity in entities:
+                earliestImage = entity.get_earliest_image(session)
+                latestImage = entity.get_latest_image(session)
+                row = [
+                    earliestImage.datetime.strftime("%Y-%m-%d"),
+                    earliestImage.datetime.strftime("%H:%M:%S"),
+                    latestImage.datetime.strftime("%Y-%m-%d"),
+                    latestImage.datetime.strftime("%H:%M:%S"),
+                    (dt.datetime(1970, 1, 1) + entity.get_timedelta(session)).strftime(
+                        "%H:%M:%S"
+                    ),
+                    CLASS_ID_MAPPING[entity.get_type_id(session)],
+                ]
+
+                data.append(row)
+
+                if len(data) > 100:
+                    writer.writerows(data)
+                    data = []
+
+            if len(data) > 0:
+                writer.writerows(data)
 
     def __repr__(self) -> str:
         return f"Entity({self.id})"

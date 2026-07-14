@@ -89,6 +89,15 @@ class EntitiesTab(QtWidgets.QWidget):
         )
         self.count.setText(str(len(self.galleryModel.results)) + " entities")
 
+    def getEntities(self, filtered: bool) -> list[Entity]:
+        if not hasattr(self, "session"):
+            return []
+
+        if filtered:
+            return list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            return list(self.session.scalars(select(Entity).distinct()))
+
 
 class EntityGallery(QtWidgets.QListView):
     def __init__(self):
@@ -129,9 +138,12 @@ class GalleryModel(QtCore.QAbstractListModel):
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
     ) -> Entity | None:
+        return self.getById(self.results[index.row()])
+
+    def getById(self, id: int) -> Entity:
         return self.session.scalar(
-            select(Entity).where(Entity.id == self.results[index.row()])
-        )
+            select(Entity).where(Entity.id == id)
+        )  # type: ignore
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
