@@ -161,17 +161,31 @@ class Root(QtWidgets.QMainWindow):
         else:
             self.entitiesTab.refreshGallery()
 
+    def warnDialog(self, msg: str):
+        d = QtWidgets.QMessageBox()
+        d.setWindowTitle("Warning!")
+        d.setText(msg)
+        d.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        d.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+        d.exec()
+
     @QtCore.Slot()
     def openImage(self, image: Image):
+        r = self.imageTab.focusImage(image)
+        if not r:
+            self.warnDialog("Image is not within the current image filters.")
+            return
         if self.tabs.currentWidget() == self.entitiesTab:
             self.tabs.setCurrentWidget(self.imageTab)
-        self.imageTab.focusImage(image)
 
     @QtCore.Slot()
     def openEntity(self, entity: Entity):
+        r = self.entitiesTab.focusEntity(entity)
+        if not r:
+            self.warnDialog("Image is not within the current image filters.")
+            return
         if self.tabs.currentWidget() == self.imageTab:
             self.tabs.setCurrentWidget(self.entitiesTab)
-        self.entitiesTab.focusEntity(entity)
 
     @QtCore.Slot()
     def doExport(self, options: ExportOptions):
@@ -179,14 +193,21 @@ class Root(QtWidgets.QMainWindow):
             return
 
         if options.mode == "images":
-            Image.export_to_csv(self.session, self.imageTab.getImages(options.filtered), options.path)
+            Image.export_to_csv(
+                self.session, self.imageTab.getImages(options.filtered), options.path
+            )
         elif options.mode == "interval":
             Image.export_to_csv(
-                self.session, self.imageTab.getImages(options.filtered), options.path, options.interval
+                self.session,
+                self.imageTab.getImages(options.filtered),
+                options.path,
+                options.interval,
             )
         else:
             Entity.export_to_csv(
-                self.session, self.entitiesTab.getEntities(options.filtered), options.path
+                self.session,
+                self.entitiesTab.getEntities(options.filtered),
+                options.path,
             )
 
         if open:
