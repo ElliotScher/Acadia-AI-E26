@@ -97,15 +97,15 @@ class EntitiesTab(QtWidgets.QWidget):
         else:
             return list(self.session.scalars(select(Entity).distinct()))
 
-    @QtCore.Slot(Entity)
-    def focusEntity(self, entity: Entity):
+    @QtCore.Slot(Entity, result=bool)
+    def focusEntity(self, entity: Entity) -> bool:
         if entity.id not in self.galleryModel.results:
-            return
+            return False
         i = self.galleryModel.results.index(entity.id)
         # this is scary, and should ideally be removed
         while i >= self.galleryModel.rowCount():
             if not self.galleryModel.canFetchMore(QtCore.QModelIndex()):
-                raise Exception(f"Failed to find {entity} in the entity tab. Yikes!")
+                return False
             self.galleryModel.fetchMore(QtCore.QModelIndex())
         index = self.galleryModel.index(i, 0)
         self.gallery.scrollTo(index)
@@ -113,6 +113,7 @@ class EntitiesTab(QtWidgets.QWidget):
             QtCore.QItemSelection(index, index),
             QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
         )
+        return True
 
 
 class EntityGallery(QtWidgets.QListView):

@@ -193,23 +193,23 @@ class ImageTab(QtWidgets.QWidget):
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
-    @QtCore.Slot(Image)
-    def focusImage(self, image: Image):
+    @QtCore.Slot(Image, result=bool)
+    def focusImage(self, image: Image) -> bool:
         if image.id not in self.galleryModel.results:
-            return
+            return False
         i = self.galleryModel.results.index(image.id)
         # this is scary, and should ideally be removed
         while i >= self.galleryModel.rowCount():
-            if self.galleryModel.canFetchMore(QtCore.QModelIndex()):
-                self.galleryModel.fetchMore(QtCore.QModelIndex())
-            else:
-                raise Exception(f"Failed to find {image} in the image tab. Yikes!")
+            if not self.galleryModel.canFetchMore(QtCore.QModelIndex()):
+                return False
+            self.galleryModel.fetchMore(QtCore.QModelIndex())
         index = self.galleryModel.index(i, 0)
         self.gallery.scrollTo(index)
         self.gallery.selectionModel().select(
             QtCore.QItemSelection(index, index),
             QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
         )
+        return True
 
 
 class ImageGallery(QtWidgets.QListView):
