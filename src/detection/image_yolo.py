@@ -213,9 +213,6 @@ def thread_worker(
 
 
 def main() -> None:
-    """
-    Main CLI entry point for YOLO detection script.
-    """
     parser = argparse.ArgumentParser(
         description="Process images in an input directory using YOLO and save results to an output directory."
     )
@@ -229,11 +226,11 @@ def main() -> None:
         help="YOLO model weights to use (default: yolo26s.pt).",
     )
     parser.add_argument(
-        "-c",
-        "--cores",
+        "-t",
+        "--threads",
         type=int,
         default=1,
-        help="Number of CPU cores to allocate to YOLO detections (default: 1).",
+        help="Number of CPU threads to allocate to YOLO detections (default: 1).",
     )
     parser.add_argument(
         "--conf",
@@ -268,18 +265,19 @@ def main() -> None:
     from src.utility.loggingutils import setup_logging_and_paths
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
+    assert input_folder is not None and output_folder is not None
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    if args.cores <= 0:
-        logger.error("The number of allocated CPU cores must be at least 1.")
+    if args.threads <= 0:
+        logger.error("The number of allocated CPU threads must be at least 1.")
         sys.exit(1)
-    thread_count = args.cores
+    thread_count = args.threads
 
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
 
-    logger.info("Allocating %d CPU core(s) to YOLO detections...", thread_count)
+    logger.info("Allocating %d CPU thread(s) to YOLO detections...", thread_count)
 
     target_classes = DEFAULT_TARGET_CLASSES
     if args.classes:

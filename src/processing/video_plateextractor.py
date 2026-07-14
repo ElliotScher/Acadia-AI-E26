@@ -4,22 +4,6 @@ Video Plate Extractor
 A standalone command-line tool that runs a license-plate-detection YOLO model
 directly against every (optionally downsampled) frame of raw video footage and
 crops tightly to each plate found, ready for plate_dwellprofiler.py.
-
-This deliberately does not go through video_entityprofiler.py's best-frame car
-tracking first. That tracker's IoU matching and "best frame" selection (area *
-sharpness) are tuned for entities crossing laterally through the frame, which
-is the wrong assumption for a plate camera - getting a readable plate requires
-facing the vehicle roughly head-on, not picking a single best moment out of a
-lateral pass. Detecting directly on every frame also means a plate gets
-multiple chances to be read as the vehicle approaches/recedes, instead of
-betting everything on one upstream-chosen frame.
-
-Cropping to the plate discards the frame's burned-in on-screen timestamp text,
-so each frame's timestamp is computed from the video's start time (resolved
-via the same OCR/filename/mtime fallback get_timestamp always uses, unless
-overridden - see --start-times) plus the frame's offset, and recorded in a
-sidecar plate_manifest.json next to the saved crops for plate_dwellprofiler.py
-to read.
 """
 
 import argparse

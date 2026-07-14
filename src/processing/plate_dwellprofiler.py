@@ -1,53 +1,9 @@
 """
 Plate Dwell Profiler
 
-A functional backend library and command-line tool to compute dwell time for
+A backend library and command-line tool to compute dwell time for
 vehicle crossings by matching on OCR'd license plate text, rather than visual
-re-identification. A license plate is an exact, unique identifier in
-principle, so matching by exact string equality is the default - but OCR
-itself isn't perfect, so --max-edit-distance offers an opt-in fuzzy-matching
-mode for when that imperfection is fracturing real crossings (see below).
-
-Unlike image_occupancyprofiler.py, this does not split footage into entry vs.
-exit directories/directions. Getting a readable plate requires the camera to
-face the vehicle roughly head-on, which means the vehicle is moving toward or
-away from the camera rather than laterally across the frame - so there's no
-reliable left/right travel direction to filter on the way
-video_entityprofiler.py's direction tag assumes. Instead, every plate sighting
-is pooled together: for a given plate, the earliest sighting is treated as its
-entry and the latest sighting as its exit, regardless of which camera or
-directory it was read from.
-
-Accepts one or more input directories, each already produced by a separate
-video_plateextractor.py run, so each image is already a tight crop of a
-single license plate - no bounding box, no further detection needed, just
-OCR. An entry camera and an exit camera are commonly two entirely separate
-video_plateextractor.py runs (different source footage, different output
-directory), each with its own plate_manifest.json - passing both directories
-in pools their sightings into one dwell-time analysis while still reading
-each directory's own manifest for accurate timestamps, since a plate crop no
-longer contains the source frame's burned-in on-screen timestamp text.
-
-A configurable minimum dwell time (--min-dwell-time, default 0s - no
-filtering) excludes short matches from the average dwell time: a crossing
-lasting a couple seconds is often two OCR hits on what's really a single
-sighting (e.g. two frames of the same still-arriving vehicle) rather than a
-genuine dwell, and would otherwise drag the average toward zero. Excluded
-matches are still returned in full in dwell_time_matches - each just carries
-a counted_in_average: false flag - so nothing is silently dropped from the
-report, only from the average.
-
---max-edit-distance (default 0 - exact match, today's behavior unchanged)
-switches compute_plate_dwell_times to fuzzy matching: two readings join the
-same crossing if their plate_text is within that edit distance of each
-other, chained transitively. plate_dwell_benchmark.py's evidence against real
-ground truth is that exact matching's dominant failure mode isn't wrong
-answers, it's NO answer - a single-character misread anywhere in a long
-crossing splits it into disconnected pieces, most often for genuinely long
-real crossings (not just rapid-fire adjacent-frame noise). --max-time-gap
-pairs with it to cap how many seconds apart two readings may be and still
-join, guarding against merging two different vehicles that coincidentally
-read as similar plates hours apart.
+re-identification.
 """
 
 import argparse
@@ -227,12 +183,11 @@ def _build_dwell_record(readings: List[PlateDetection]) -> Dict[str, Any]:
     identical under exact matching; may vary under fuzzy matching, where
     plate_text_variants lists every distinct string actually seen).
 
-    images lists every member's path (not just entry/exit) - callers that
-    need this match's true membership (e.g. plate_dwell_benchmark.py's
-    ground-truth comparison) should use this rather than re-deriving
-    membership by re-grouping on plate_text themselves, since under fuzzy
-    matching a cluster's consensus plate_text won't equal every member's raw
-    text, and two unrelated clusters could coincidentally share one.
+    Args:
+        readings (List[PlateDetection]): List of PlateDetection objects.
+
+    Returns:
+        Dict[str, Any] Dictionary of plate matches
     """
     entry_det = readings[0]
     exit_det = readings[-1]
@@ -254,7 +209,16 @@ def _build_dwell_record(readings: List[PlateDetection]) -> Dict[str, Any]:
 def _group_by_exact_text(
     detections: List[PlateDetection],
 ) -> Tuple[List[Dict[str, Any]], List[PlateDetection]]:
-    """The original, unchanged grouping: readings share a crossing only if their plate_text is identical."""
+    """
+    Readings share a crossing only if their plate_text is identical.
+
+    Args:
+        detections (List[PlateDetection]): List of PlateDetection objects.
+
+    Returns:
+        Tuple[List[Dict[str, Any]]: List of fully matched detections
+        List[PlateDetection]]: List of single sighted plates
+    """
     sightings: Dict[str, List[PlateDetection]] = defaultdict(list)
     for detection in detections:
         sightings[detection.plate_text].append(detection)
@@ -286,32 +250,41 @@ def _group_by_fuzzy_text(
     This absorbs the single-character misreads that would otherwise fracture
     one real, continuous presence into several disconnected "crossings".
 
-    Readings are time-sorted first, so for a given reading the search for
-    candidate partners stops as soon as max_time_gap is exceeded - O(n * k)
-    where k is how many other readings fall within that window, rather than
-    O(n^2), as long as max_time_gap is set to something well short of the
-    dataset's total time span.
+    Args:
+        detections (List[PlateDetection]): List of PlateDetection objects.
+        max_edit_distance (int): Maximum edit distance between two readings.
+        max_time_gap (Optional[float]): Maximum time gap between two readings.
+
+    Returns:
+        Tuple[List[Dict[str, Any]]: List of fully matched detections
+        List[PlateDetection]]: List of single sighted plates
     """
     ordered = sorted(detections, key=lambda d: d.timestamp)
     n = len(ordered)
     parent = list(range(n))
 
-    def find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
+    def find(element: int) -> int:
+        while parent[element] != element:
+            parent[element] = parent[parent[element]]
+            element = parent[element]
+        return element
 
-    def union(i: int, j: int) -> None:
-        root_i, root_j = find(i), find(j)
+    def union(element_1: int, element_2: int) -> None:
+        root_i, root_j = find(element_1), find(element_2)
         if root_i != root_j:
             parent[root_j] = root_i
 
     for i in range(n):
         for j in range(i + 1, n):
-            if max_time_gap is not None and ordered[j].timestamp - ordered[i].timestamp > max_time_gap:
+            if (
+                max_time_gap is not None
+                and ordered[j].timestamp - ordered[i].timestamp > max_time_gap
+            ):
                 break  # sorted by time - no later j can satisfy the gap either
-            if levenshtein_distance(ordered[i].plate_text, ordered[j].plate_text) <= max_edit_distance:
+            if (
+                levenshtein_distance(ordered[i].plate_text, ordered[j].plate_text)
+                <= max_edit_distance
+            ):
                 union(i, j)
 
     clusters: Dict[int, List[PlateDetection]] = defaultdict(list)
@@ -341,29 +314,6 @@ def compute_plate_dwell_times(
     alone: for each crossing, its earliest sighting is treated as the entry
     and its latest sighting as the exit, regardless of which camera/directory
     either reading came from.
-
-    By default (max_edit_distance=0), readings share a crossing only if their
-    plate_text is exactly identical - the original behavior, unchanged bit
-    for bit. Setting max_edit_distance > 0 instead clusters readings whose
-    plate_text is within that edit distance of each other, chained
-    transitively (see _group_by_fuzzy_text): this absorbs the single-
-    character OCR misreads that would otherwise fracture one real, continuous
-    presence into several disconnected crossings (plate_dwell_benchmark.py
-    calls that fracturing "split", and it's the dominant failure mode there -
-    a plate parked for hours commonly gets read slightly differently at
-    different points in that window, not just on rapid-fire adjacent frames).
-    max_time_gap additionally requires two readings to be within that many
-    seconds of each other to cluster, guarding against two different
-    vehicles with coincidentally similar plates - read hours apart - being
-    merged into one bogus crossing. Under fuzzy matching, a crossing's
-    plate_text is the most common exact string among its readings (ties break
-    on whichever appears first); plate_text_variants lists every distinct
-    string actually seen, for transparency.
-
-    A crossing with only one sighting can't produce a dwell time (there's no
-    second sighting to mark an exit) and is returned separately. A crossing
-    with three or more sightings only uses its first and last - readings in
-    between aren't a distinct crossing, just the same vehicle still present.
 
     Args:
         detections (List[PlateDetection]): All plate readings to group, from
@@ -434,7 +384,7 @@ def compute_average_dwell_time(
 
 
 def normalize_input_dirs(
-    input_dirs: Union[str, Path, List[Union[str, Path]]]
+    input_dirs: Union[str, Path, List[Union[str, Path]]],
 ) -> List[Path]:
     """
     Normalizes a single directory or a list of directories into a Path list.
@@ -460,7 +410,7 @@ def run_plate_dwell_profiling(
     max_time_gap: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Exposes the plate-based dwell time profiling workflow as a backend API.
+    Plate-based dwell time pipeline.
 
     Args:
         input_dirs (Union[str, Path, List[Union[str, Path]]]): One or more
@@ -563,12 +513,6 @@ def run_plate_dwell_profiling(
 
 
 def main() -> None:
-    """
-    Main CLI entry point for the plate dwell profiler script.
-
-    Raises:
-        SystemExit: If required directories are missing or invalid.
-    """
     parser = argparse.ArgumentParser(
         description="Compute dwell time for vehicle crossings by matching OCR'd "
         "license plate text: a plate's earliest sighting is its entry, its "

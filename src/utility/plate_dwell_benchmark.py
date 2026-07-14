@@ -6,84 +6,6 @@ ground-truth plate text (from plate_ground_truth_labeler.py) against its
 output when fed the same pipeline's actual raw OCR readings - quantifying how
 much OCR error propagates into the downstream dwell-time metric, not just
 into plate-text accuracy (see plate_ocr_benchmark.py for that).
-
-Both runs are restricted to the images with a known (non-unreadable,
-finished) ground-truth label, so they process the exact same image set and
-differ only in which text is used to identify each image's vehicle.
-
-dwell_time is purely a function of the timestamps of the images assigned to
-a plate's group, so two runs that group the SAME images together always
-produce identical dwell times - the only way OCR-based dwell time can
-diverge from ground truth is if OCR errors change which images get grouped
-together. Every ground-truth crossing (2+ sightings of the same true plate)
-is classified into exactly one of:
-    - exact: OCR grouped precisely the same images as ground truth - dwell
-      time is guaranteed to match.
-    - corrupted: OCR grouped a similar-but-different image set under one
-      text (some of the vehicle's sightings dropped, and/or a different
-      vehicle's sightings merged in) - a dwell time is still computed, but
-      it's wrong.
-    - split: the vehicle's sightings were OCR'd into 2+ different texts, so
-      no single OCR record represents it.
-    - dropped: none of the vehicle's sightings were OCR'd successfully at
-      all, so it never appears anywhere in the OCR-based output.
-
-A split crossing's fragments can still coincidentally have 2+ sightings
-under one misread and so form a real (but meaningless) entry in the OCR
-pipeline's own matches - counting that fragment's dwell time would silently
-pollute the "OCR avg dwell" statistic with a number that doesn't correspond
-to any real crossing. Those fragments are excluded from that average (see
-split_fragment_texts), the same way plate_dwellprofiler.py's own
---min-dwell-time excludes short matches: still listed in the raw
-dwell_time_matches, just left out of the average.
-
---min-dwell-time applies that same exclusion here too, on both the
-ground-truth and OCR averages and on the corrupted-crossings mean delta: a
-crossing lasting a fraction of a second is usually a few consecutive video
-frames of one brief pass-by, not a genuine separate dwell event, and OCR
-reading those near-identical frames inconsistently is exactly what produces
-most "split" classifications and wild delta outliers. Filtering it out keeps
-the aggregate numbers representative of real crossings instead of being
-dominated by frame-to-frame noise.
-
-Both averages are reported alongside their median, since a small sample full
-of multi-hour outliers (a handful of long real crossings averaged with
-whatever survives min_dwell_time) makes the mean easy to misread as "the
-typical dwell" when it isn't. Median is always derived fresh from
-dwell_time_matches' counted_in_average flags at display time (see
-_mean_and_median_dwell), rather than trusted from a stored field, so it
-renders correctly even from a report saved by an older version of this
-script that never computed a median.
-
---html writes the same summary as a standalone HTML page with real bordered
-<table> elements - unlike the console's monospace-aligned text, an actual
-HTML table survives copy-paste into Outlook (or any Word-based rich text
-editor) as a proper table, since Outlook's paste handling reconstructs
-tables from HTML markup, not from whitespace alignment.
-
---from-report re-renders a previously saved --report JSON (console and,
-with --html, the HTML page too) without re-running OCR - useful for
-iterating on how results are displayed against a large ground truth set
-without paying for a fresh OCR pass every time.
-
-Before changing plate_dwellprofiler.py's actual matching algorithm, it's
-worth asking a narrower question first: of the dwell times the algorithm
-DOES manage to compute (status "exact" or "corrupted" - "split" and
-"dropped" never produce a number at all, so there's nothing to judge for
-those), how close are they to the truth? See compute_dwell_accuracy: it
-scores each such crossing's relative error (|ocr - gt| / gt) against
---tolerance (default 20%) and reports what fraction are "reasonable",
-plus a bucketed breakdown. --min-dwell-time applies here too, excluding
-near-zero ground-truth dwells from judgment - dividing by a near-zero
-denominator turns a trivial absolute difference into a huge, meaningless
-relative error, the same reason it's excluded from the plain averages.
-
---histogram (and, embedded automatically, --html) renders an overlaid
-histogram of the ground-truth vs OCR dwell time distributions (see
-render_dwell_time_histogram) - the visual counterpart to the mean/median
-numbers, over the exact same counted_in_average population. Dwell times
-here span several orders of magnitude, so it's log-scaled on both axes of
-binning; a linear histogram would crush almost everything into one bar.
 """
 
 import argparse
@@ -94,7 +16,7 @@ import statistics
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import AbstractSet, Any, Dict, List, Optional, Set, Tuple, Union
 
 import matplotlib
 
@@ -117,7 +39,7 @@ from src.utility.htmlreport import html_heading, html_table, wrap_html_document
 from src.utility.imgutils import get_timestamp
 from src.utility.plate_ocr_benchmark import load_ground_truth
 
-_STATUS_ORDER = ("dropped", "split", "corrupted", "exact")
+_STATUS_ORDER: Tuple[str, ...] = ("dropped", "split", "corrupted", "exact")
 
 
 @dataclass
@@ -267,9 +189,7 @@ def compare_crossings(
         true_plate = match["plate_text"]
         true_paths = gt_paths_by_plate[true_plate]
 
-        clusters_used = {
-            path_to_cluster[p] for p in true_paths if p in path_to_cluster
-        }
+        clusters_used = {path_to_cluster[p] for p in true_paths if p in path_to_cluster}
 
         if not clusters_used:
             comparisons.append(
@@ -374,22 +294,22 @@ def _status_summary(
             crossings were excluded from that mean for falling below
             min_dwell_time.
     """
-    status_counts = {status: 0 for status in _STATUS_ORDER}
+    status_counts: Dict[str, int] = {status: 0 for status in _STATUS_ORDER}
     for c in comparisons:
         status_counts[c.status] += 1
 
     corrupted = [c for c in comparisons if c.status == "corrupted"]
-    corrupted_deltas = [
-        c.dwell_time_delta
-        for c in corrupted
-        if c.dwell_time_delta is not None
-        and c.ground_truth_dwell_time >= min_dwell_time
-    ]
+    corrupted_deltas: List[float] = []
+    for c in corrupted:
+        delta = c.dwell_time_delta
+        if delta is not None and c.ground_truth_dwell_time >= min_dwell_time:
+            corrupted_deltas.append(delta)
     excluded_from_corrupted_delta = len(
         [
             c
             for c in corrupted
-            if c.dwell_time_delta is not None and c.ground_truth_dwell_time < min_dwell_time
+            if c.dwell_time_delta is not None
+            and c.ground_truth_dwell_time < min_dwell_time
         ]
     )
     mean_corrupted_delta = (
@@ -543,7 +463,7 @@ def render_dwell_time_histogram(
     return buf.getvalue()
 
 
-_ACCURACY_BUCKETS = ("<=5%", "<=20%", "<=50%", ">50%")
+_ACCURACY_BUCKETS: Tuple[str, ...] = ("<=5%", "<=20%", "<=50%", ">50%")
 
 
 def compute_dwell_accuracy(
@@ -588,12 +508,16 @@ def compute_dwell_accuracy(
     ]
     excluded_short_dwell = len(has_dwell) - len(judged)
 
-    errors = [
-        abs(c.ocr_dwell_time - c.ground_truth_dwell_time) / c.ground_truth_dwell_time
-        for c in judged
-    ]
+    errors: List[float] = []
+    for c in judged:
+        ocr_dwell_time = c.ocr_dwell_time
+        if ocr_dwell_time is not None:
+            errors.append(
+                abs(ocr_dwell_time - c.ground_truth_dwell_time)
+                / c.ground_truth_dwell_time
+            )
 
-    counts = {bucket: 0 for bucket in _ACCURACY_BUCKETS}
+    counts: Dict[str, int] = {bucket: 0 for bucket in _ACCURACY_BUCKETS}
     for err in errors:
         if err <= 0.05:
             counts["<=5%"] += 1
@@ -630,12 +554,19 @@ def _stat_line(label: str, value: str) -> str:
     return f"{label:<{_LABEL_WIDTH}}: {value}"
 
 
-def _ordered_comparisons(comparisons: List[CrossingComparison]) -> List[CrossingComparison]:
-    return sorted(comparisons, key=lambda c: (_STATUS_ORDER.index(c.status), c.true_plate))
+def _ordered_comparisons(
+    comparisons: List[CrossingComparison],
+) -> List[CrossingComparison]:
+    return sorted(
+        comparisons, key=lambda c: (_STATUS_ORDER.index(c.status), c.true_plate)
+    )
 
 
 def _print_dwell_accuracy(dwell_accuracy: Dict[str, Any]) -> None:
-    if not dwell_accuracy["total_judged"] and not dwell_accuracy["excluded_short_dwell"]:
+    if (
+        not dwell_accuracy["total_judged"]
+        and not dwell_accuracy["excluded_short_dwell"]
+    ):
         return
     print()
     print("DWELL TIME ACCURACY".center(_BANNER_WIDTH, "-"))
@@ -659,7 +590,9 @@ def _print_dwell_accuracy(dwell_accuracy: Dict[str, Any]) -> None:
     for bucket in _ACCURACY_BUCKETS:
         entry = dwell_accuracy["histogram"][bucket]
         print(
-            _stat_line(f"  {bucket} error", f"{entry['count']}  ({entry['share'] * 100:.2f}%)")
+            _stat_line(
+                f"  {bucket} error", f"{entry['count']}  ({entry['share'] * 100:.2f}%)"
+            )
         )
 
 
@@ -683,7 +616,9 @@ def _print_summary(
         print(_stat_line(f"  - {status}", f"{count}  ({share})"))
     print("-" * _BANNER_WIDTH)
     gt_stats = ground_truth_report["statistics"]
-    gt_mean, gt_median = _mean_and_median_dwell(ground_truth_report["dwell_time_matches"])
+    gt_mean, gt_median = _mean_and_median_dwell(
+        ground_truth_report["dwell_time_matches"]
+    )
     print(
         _stat_line(
             "Ground truth avg dwell", f"{gt_mean:.2f}s  (median {gt_median:.2f}s)"
@@ -701,7 +636,8 @@ def _print_summary(
     ocr_mean, ocr_median = _mean_and_median_dwell(ocr_report["dwell_time_matches"])
     print(
         _stat_line(
-            "OCR avg dwell (its matches)", f"{ocr_mean:.2f}s  (median {ocr_median:.2f}s)"
+            "OCR avg dwell (its matches)",
+            f"{ocr_mean:.2f}s  (median {ocr_median:.2f}s)",
         )
     )
     if ocr_stats.get("excluded_by_min_dwell_time"):
@@ -747,8 +683,12 @@ def _print_summary(
         print(header)
         print("-" * len(header))
         for c in _ordered_comparisons(comparisons):
-            ocr_dwell = f"{c.ocr_dwell_time:.2f}s" if c.ocr_dwell_time is not None else "-"
-            delta = f"{c.dwell_time_delta:.2f}s" if c.dwell_time_delta is not None else "-"
+            ocr_dwell = (
+                f"{c.ocr_dwell_time:.2f}s" if c.ocr_dwell_time is not None else "-"
+            )
+            delta = (
+                f"{c.dwell_time_delta:.2f}s" if c.dwell_time_delta is not None else "-"
+            )
             print(
                 f"{c.true_plate:<{plate_w}}  {c.status:<9}  "
                 f"{c.ground_truth_dwell_time:>8.2f}s  {ocr_dwell:>9}  {delta:>8}"
@@ -887,7 +827,10 @@ def render_html_report(
         for bucket in _ACCURACY_BUCKETS:
             entry = dwell_accuracy["histogram"][bucket]
             accuracy_rows.append(
-                [f"  {bucket} error", f"{entry['count']}  ({entry['share'] * 100:.2f}%)"]
+                [
+                    f"  {bucket} error",
+                    f"{entry['count']}  ({entry['share'] * 100:.2f}%)",
+                ]
             )
         sections.append(html_heading("Dwell Time Accuracy", level=3))
         sections.append(html_table(["Metric", "Value"], accuracy_rows))
@@ -904,12 +847,16 @@ def render_html_report(
                     c["true_plate"],
                     c["status"],
                     f"{c['ground_truth_dwell_time']:.2f}s",
-                    f"{c['ocr_dwell_time']:.2f}s"
-                    if c["ocr_dwell_time"] is not None
-                    else "-",
-                    f"{c['dwell_time_delta']:.2f}s"
-                    if c["dwell_time_delta"] is not None
-                    else "-",
+                    (
+                        f"{c['ocr_dwell_time']:.2f}s"
+                        if c["ocr_dwell_time"] is not None
+                        else "-"
+                    ),
+                    (
+                        f"{c['dwell_time_delta']:.2f}s"
+                        if c["dwell_time_delta"] is not None
+                        else "-"
+                    ),
                 ]
                 for c in ordered
             ],
@@ -1006,7 +953,9 @@ def run_plate_dwell_benchmark(
     )
     fragment_texts = split_fragment_texts(comparisons)
 
-    def _stats(matches, singles, total_images, excluded_texts=frozenset()):
+    def _stats(
+        matches, singles, total_images, excluded_texts: AbstractSet[str] = frozenset()
+    ):
         # compute_average_dwell_time sets counted_in_average per-match based
         # on min_dwell_time; layer the split-fragment exclusion (OCR only) on
         # top, tracking each reason separately so the report doesn't mislabel
@@ -1033,11 +982,11 @@ def run_plate_dwell_benchmark(
             "median_dwell_time": median_dwell,
         }
 
-    ground_truth_report = {
+    ground_truth_report: Dict[str, Any] = {
         "statistics": _stats(gt_matches, gt_singles, len(ground_truth_detections)),
         "dwell_time_matches": gt_matches,
     }
-    ocr_report = {
+    ocr_report: Dict[str, Any] = {
         "statistics": _stats(
             ocr_matches,
             ocr_singles,
@@ -1047,7 +996,9 @@ def run_plate_dwell_benchmark(
         "dwell_time_matches": ocr_matches,
     }
 
-    _print_summary(ground_truth_report, ocr_report, comparisons, status_summary, dwell_accuracy)
+    _print_summary(
+        ground_truth_report, ocr_report, comparisons, status_summary, dwell_accuracy
+    )
 
     summary_report: Dict[str, Any] = {
         "metadata": {
@@ -1148,7 +1099,9 @@ def render_saved_report(
         comparisons, min_dwell_time=min_dwell_time, tolerance=tolerance
     )
 
-    _print_summary(ground_truth_report, ocr_report, comparisons, status_summary, dwell_accuracy)
+    _print_summary(
+        ground_truth_report, ocr_report, comparisons, status_summary, dwell_accuracy
+    )
 
     if histogram:
         with open(histogram, "wb") as f:
@@ -1239,7 +1192,7 @@ def main() -> None:
         type=float,
         default=0.2,
         help="Maximum relative error for a crossing's OCR dwell time to count "
-        "as \"reasonable\" in the dwell-time accuracy summary. Defaults to "
+        'as "reasonable" in the dwell-time accuracy summary. Defaults to '
         "0.2 (20%%).",
     )
     parser.add_argument(

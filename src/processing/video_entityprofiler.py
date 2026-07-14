@@ -290,7 +290,7 @@ def process_video(
 
         current_detections: List[Detection] = []
         for box in boxes:
-            x, y, w, h = box
+            x, y, w, h = box.x, box.y, box.w, box.h
             crop = frame[y : y + h, x : x + w]
             if crop.size == 0:
                 continue
@@ -652,6 +652,7 @@ def main() -> None:
     )
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
+    assert input_folder is not None and output_folder is not None
 
     if args.reference_entity_id is not None and args.reference_speed is None:
         logger.error("--reference-entity-id requires --reference-speed.")

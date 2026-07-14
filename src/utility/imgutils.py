@@ -2,10 +2,14 @@ import datetime
 import json
 import re
 from pathlib import Path
-from typing import List, Tuple, Optional, Union
+from typing import List, Optional, Union
 
 import cv2
 import numpy as np
+
+from PIL import UnidentifiedImageError
+
+from utility.geometryutils import Rectangle
 
 # Sidecar filename written by video_plateextractor.py next to its cropped plate
 # images, mapping each crop back to a timestamp resolved from its source frame
@@ -153,8 +157,7 @@ def extract_timestamp_via_ocr(img_path: Path) -> Optional[float]:
                 if ts is not None:
                     return ts
 
-    except Exception:
-        # Gracefully ignore OCR errors
+    except (FileNotFoundError, UnidentifiedImageError, ValueError, TypeError):
         pass
     return None
 
@@ -175,7 +178,6 @@ def _normalize_plate_text(text: str) -> str:
     return "".join(ch for ch in text.upper() if ch in _PLATE_CHAR_WHITELIST)
 
 
-_PLATE_OCR_MODEL_NAME = "cct-s-v2-global-model"
 _plate_recognizer = None
 
 
@@ -194,7 +196,7 @@ def _get_plate_recognizer():
     if _plate_recognizer is None:
         from fast_plate_ocr import LicensePlateRecognizer
 
-        _plate_recognizer = LicensePlateRecognizer(_PLATE_OCR_MODEL_NAME)
+        _plate_recognizer = LicensePlateRecognizer("cct-s-v2-global-model")
     return _plate_recognizer
 
 
@@ -230,8 +232,7 @@ def extract_plate_text_via_ocr(crop: np.ndarray, min_length: int = 3) -> Optiona
         plate_text = _normalize_plate_text(results[0].plate)
         if len(plate_text) >= min_length:
             return plate_text
-    except Exception:
-        # Gracefully ignore OCR errors
+    except (ImportError, ValueError, TypeError, RuntimeError, OSError):
         pass
 
     return None
@@ -294,7 +295,7 @@ def compute_sharpness(img: np.ndarray) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
-def detect_entities(img: np.ndarray) -> List[Tuple[int, int, int, int]]:
+def detect_entities(img: np.ndarray) -> List[Rectangle]:
     """
     Detects green bounding boxes in the image and returns a list containing
     at most the largest box (x, y, w, h).
@@ -305,7 +306,7 @@ def detect_entities(img: np.ndarray) -> List[Tuple[int, int, int, int]]:
         img (np.ndarray): OpenCV BGR image.
 
     Returns:
-        List[Tuple[int, int, int, int]]: A list containing the bounding box
+        List[Rectangle]: A list containing the bounding box
             coordinates (x, y, w, h) if found, otherwise an empty list.
     """
     # Strict green filter in BGR: B < 50, G > 180, R < 50
@@ -315,19 +316,19 @@ def detect_entities(img: np.ndarray) -> List[Tuple[int, int, int, int]]:
     # Use RETR_EXTERNAL to find only the outer boundaries of contours
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    raw_boxes = []
+    raw_boxes : List[Rectangle] = []
     h_img, w_img = img.shape[:2]
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         # Filter out noise (too small) or image borders (too large)
         if 20 < w < w_img * 0.98 and 20 < h < h_img * 0.98:
-            raw_boxes.append((x, y, w, h))
+            raw_boxes.append(Rectangle(x, y, w, h))
 
     if not raw_boxes:
         return []
 
     # Since images are assumed to have at most one vehicle profile box, return the largest box (by area)
-    largest_box = max(raw_boxes, key=lambda b: b[2] * b[3])
+    largest_box = max(raw_boxes, key=lambda b: b.w * b.h)
     return [largest_box]
 
 

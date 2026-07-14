@@ -11,23 +11,6 @@ aggregated across every evaluated plate), plus a breakdown of how far off
 (in edit distance) the mismatched plates were. All of this is also broken
 out per source video, so a video with a bad angle/lighting doesn't hide
 behind a good aggregate score.
-
-Per-video grouping prefers video_plateextractor.py's plate_manifest.json
-(each crop's "source_video" field) when one is present alongside the images;
-otherwise it falls back to grouping by each crop's parent directory, since
-process_video() saves every video's crops under a subdirectory named after
-that video.
-
-The summary also reports how many images were thrown out and why, both
-overall and per video: ground truth entries with no usable text (marked
-unreadable or never finished) are thrown out before OCR runs, and entries
-whose image file can't be found/read are thrown out during scoring.
-
---html writes the same summary as a standalone HTML page with real bordered
-<table> elements - unlike the console's monospace-aligned text, an actual
-HTML table survives copy-paste into Outlook (or any Word-based rich text
-editor) as a proper table, since Outlook's paste handling reconstructs
-tables from HTML markup, not from whitespace alignment.
 """
 
 import argparse
@@ -35,7 +18,7 @@ import json
 import statistics
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 
@@ -68,7 +51,11 @@ def load_ground_truth(path: Path) -> Dict[str, str]:
             either.
     """
     raw = _load_raw_ground_truth(path)
-    return {rel_path: text for rel_path, text in raw.items() if text}
+    ground_truth: Dict[str, str] = {}
+    for rel_path, text in raw.items():
+        if text:
+            ground_truth[rel_path] = text
+    return ground_truth
 
 
 def load_source_videos(folder: Path) -> Dict[str, str]:
@@ -121,7 +108,7 @@ def video_group_for(rel_path: str, source_videos: Dict[str, str]) -> str:
     return parent if parent != "." else "(unknown video)"
 
 
-_MISS_BUCKETS = ("1", "2", "3", "4+")
+_MISS_BUCKETS: Tuple[str, ...] = ("1", "2", "3", "4+")
 
 
 def summarize_miss_distances(results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -150,7 +137,7 @@ def summarize_miss_distances(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     miss_distances = [r["char_errors"] for r in results if not r["exact_match"]]
     num_misses = len(miss_distances)
 
-    counts = {bucket: 0 for bucket in _MISS_BUCKETS}
+    counts: Dict[str, int] = {bucket: 0 for bucket in _MISS_BUCKETS}
     for distance in miss_distances:
         bucket = str(distance) if distance <= 3 else "4+"
         counts[bucket] += 1
@@ -165,7 +152,9 @@ def summarize_miss_distances(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     return {
         "num_misses": num_misses,
-        "mean_edit_distance": statistics.mean(miss_distances) if miss_distances else 0.0,
+        "mean_edit_distance": (
+            statistics.mean(miss_distances) if miss_distances else 0.0
+        ),
         "median_edit_distance": (
             statistics.median(miss_distances) if miss_distances else 0.0
         ),
@@ -219,9 +208,7 @@ def _print_summary(
     if num_misses:
         print()
         print("MISSES BY EDIT DISTANCE".center(_BANNER_WIDTH, "-"))
-        print(
-            _stat_line("Misses (non-exact matches)", str(num_misses))
-        )
+        print(_stat_line("Misses (non-exact matches)", str(num_misses)))
         print(
             _stat_line(
                 "Mean / median edit distance",
@@ -381,9 +368,15 @@ def render_html_report(summary_report: Dict[str, Any]) -> str:
                     row["unique_plates_seen"],
                     f"{row['match_rate'] * 100:.2f}%",
                     f"{row['char_accuracy'] * 100:.2f}%",
-                    _miss_cell_text(row["miss_distance_distribution"]["histogram"]["1"]),
-                    _miss_cell_text(row["miss_distance_distribution"]["histogram"]["2"]),
-                    _miss_cell_text(row["miss_distance_distribution"]["histogram"]["3"]),
+                    _miss_cell_text(
+                        row["miss_distance_distribution"]["histogram"]["1"]
+                    ),
+                    _miss_cell_text(
+                        row["miss_distance_distribution"]["histogram"]["2"]
+                    ),
+                    _miss_cell_text(
+                        row["miss_distance_distribution"]["histogram"]["3"]
+                    ),
                     _miss_cell_text(
                         row["miss_distance_distribution"]["histogram"]["4+"]
                     ),
@@ -499,16 +492,12 @@ def run_plate_ocr_benchmark(
     unique_plates_seen = len(set(ground_truth.values()))
     total = len(results)
     match_rate = exact_matches / total if total else 0.0
-    char_accuracy = (
-        1 - (total_char_errors / total_gt_chars) if total_gt_chars else 0.0
-    )
+    char_accuracy = 1 - (total_char_errors / total_gt_chars) if total_gt_chars else 0.0
     total_thrown_out = thrown_out_unusable + skipped_missing
     miss_distribution = summarize_miss_distances(results)
 
     by_video: List[Dict[str, Any]] = []
-    all_videos = (
-        set(video_images) | set(video_skipped) | set(video_thrown_out_unusable)
-    )
+    all_videos = set(video_images) | set(video_skipped) | set(video_thrown_out_unusable)
     for video in sorted(all_videos):
         v_total = video_images[video]
         v_matches = video_exact_matches[video]

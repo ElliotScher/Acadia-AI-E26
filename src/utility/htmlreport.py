@@ -1,13 +1,5 @@
 """
 HTML Report Helpers
-
-Shared table/document rendering for the plate benchmark scripts'
---html/-w output (plate_ocr_benchmark.py, plate_dwell_benchmark.py): a
-standalone HTML page meant to be opened in a browser and copy-pasted
-(select-all, copy) directly into an Outlook email. Real <table> markup - not
-the console's monospace-aligned text - is what survives that copy/paste as
-an actual table, since Outlook's paste handling reconstructs tables from
-HTML markup, not from whitespace alignment.
 """
 
 import html
@@ -21,12 +13,6 @@ def html_table(headers: List[str], rows: List[List[Any]]) -> str:
     """
     Renders a bordered HTML table.
 
-    Both the legacy border/cellpadding attributes and inline CSS are set on
-    every element, since Outlook's paste handling (it renders pasted HTML
-    through Word's engine) is inconsistent about which one it keeps - this
-    combination is the standard belt-and-suspenders approach for HTML that
-    needs to survive a copy/paste into Outlook as an actual table.
-
     Args:
         headers (List[str]): Column header labels.
         rows (List[List[Any]]): Row values; each is str()'d and HTML-escaped.
@@ -38,7 +24,9 @@ def html_table(headers: List[str], rows: List[List[Any]]) -> str:
         f"border:1px solid #444444; background-color:#f2f2f2; "
         f"padding:4px 10px; text-align:left; font-weight:bold; {_CELL_FONT}"
     )
-    td_style = f"border:1px solid #444444; padding:4px 10px; text-align:left; {_CELL_FONT}"
+    td_style = (
+        f"border:1px solid #444444; padding:4px 10px; text-align:left; {_CELL_FONT}"
+    )
 
     header_cells = "".join(
         f'<th style="{th_style}">{html.escape(h)}</th>' for h in headers

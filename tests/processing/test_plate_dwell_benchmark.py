@@ -169,7 +169,9 @@ def test_status_summary_min_dwell_time_excludes_short_gt_dwell_from_corrupted_de
     assert unfiltered["excluded_from_corrupted_delta"] == 0
 
     filtered = _status_summary(comparisons, min_dwell_time=5.0)
-    noise_delta = next(c for c in comparisons if c.true_plate == "NOISE1").dwell_time_delta
+    noise_delta = next(
+        c for c in comparisons if c.true_plate == "NOISE1"
+    ).dwell_time_delta
     assert filtered["excluded_from_corrupted_delta"] == 1
     assert filtered["mean_corrupted_delta"] != pytest.approx(
         unfiltered["mean_corrupted_delta"]
@@ -311,7 +313,9 @@ def test_run_plate_dwell_benchmark_excludes_split_fragments_from_ocr_average(
     assert ocr_stats["excluded_by_min_dwell_time"] == 0
     assert ocr_stats["average_dwell_time"] == pytest.approx(60.0)
 
-    matches_by_text = {m["plate_text"]: m for m in report["ocr_run"]["dwell_time_matches"]}
+    matches_by_text = {
+        m["plate_text"]: m for m in report["ocr_run"]["dwell_time_matches"]
+    }
     assert matches_by_text["CXC333"]["counted_in_average"] is False
     assert matches_by_text["DDD444"]["counted_in_average"] is True
 
@@ -358,14 +362,18 @@ def test_run_plate_dwell_benchmark_min_dwell_time_excludes_short_crossings(
     assert ocr_stats["excluded_by_split_fragment"] == 0
     assert ocr_stats["average_dwell_time"] == pytest.approx(600.0)
 
-    gt_matches_by_plate = {m["plate_text"]: m for m in report["ground_truth_run"]["dwell_time_matches"]}
+    gt_matches_by_plate = {
+        m["plate_text"]: m for m in report["ground_truth_run"]["dwell_time_matches"]
+    }
     assert gt_matches_by_plate["NNN111"]["counted_in_average"] is False
     assert gt_matches_by_plate["GGG222"]["counted_in_average"] is True
 
     # Excluded crossings are still listed in full, not dropped from the table.
     crossings_by_plate = {c["true_plate"]: c for c in report["crossings"]}
     assert crossings_by_plate["NNN111"]["status"] == "exact"
-    assert crossings_by_plate["NNN111"]["ground_truth_dwell_time"] == pytest.approx(0.03)
+    assert crossings_by_plate["NNN111"]["ground_truth_dwell_time"] == pytest.approx(
+        0.03
+    )
 
 
 def test_run_plate_dwell_benchmark_defaults_input_dir_to_ground_truth_parent(
@@ -853,7 +861,9 @@ def test_run_plate_dwell_benchmark_writes_histogram_file(tmp_path):
         "src.processing.plate_dwellprofiler.extract_plate_text_via_ocr",
         side_effect=fake_ocr,
     ):
-        run_plate_dwell_benchmark(tmp_path / "ground_truth.json", histogram=histogram_path)
+        run_plate_dwell_benchmark(
+            tmp_path / "ground_truth.json", histogram=histogram_path
+        )
 
     assert histogram_path.exists()
     assert histogram_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

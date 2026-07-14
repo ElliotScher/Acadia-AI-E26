@@ -1,7 +1,7 @@
 """
 Image Occupancy Profiler
 
-A functional backend library and command-line tool to extract features from green bounding boxes
+A backend library and command-line tool to extract features from green bounding boxes
 (detected inside images) using a pre-trained ResNet-50 network and re-identify/track
 entities chronologically across images to compute occupancy.
 """
@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from utility import imgutils
 
 import matplotlib
+
+from utility.geometryutils import Rectangle
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -473,7 +475,7 @@ def save_database_to_json(
     logger.info("Saved database to %s", filepath)
 
 
-def select_primary_box(boxes: List[List[int]]) -> List[List[int]]:
+def select_primary_box(boxes: List[Rectangle]) -> List[Rectangle]:
     """
     Reduces a list of raw detected boxes down to a single box for the entity
     in the image.
@@ -485,10 +487,10 @@ def select_primary_box(boxes: List[List[int]]) -> List[List[int]]:
     bounding box is ever drawn per image.
 
     Args:
-        boxes (List[List[int]]): Raw detected boxes as [x, y, w, h].
+        boxes (List[Rectangle]): Raw detected boxes as Rectangle(x, y, w, h).
 
     Returns:
-        List[List[int]]: A list containing just the single largest box, or
+        List[Rectangle]: A list containing just the single largest box, or
             an empty list if no boxes were detected.
     """
     if not boxes:
@@ -836,7 +838,7 @@ def extract_features_for_directory(
     model: nn.Module,
     device: torch.device,
     transform: Any,
-    cores: int = 1,
+    num_threads: int = 1,
     flip: bool = False,
 ) -> Dict[Path, List[Dict[str, Any]]]:
     """
@@ -847,7 +849,7 @@ def extract_features_for_directory(
         model (nn.Module): Feature extractor model instance.
         device (torch.device): PyTorch device to execute on.
         transform (Any): Image pre-processing transform pipeline.
-        cores (int): Number of parallel CPU worker threads to spawn. Defaults to 1.
+        num_threads (int): Number of parallel CPU worker threads to spawn. Defaults to 1.
         flip (bool): If True, horizontally mirrors each crop before feature extraction.
             See `process_images_worker` for rationale. Defaults to False.
 
@@ -861,12 +863,12 @@ def extract_features_for_directory(
         total=len(image_paths), desc="Extracting Features", unit="image"
     )
 
-    chunk_size = max(1, len(image_paths) // cores)
+    chunk_size = max(1, len(image_paths) // num_threads)
     threads = []
 
-    for i in range(cores):
+    for i in range(num_threads):
         start = i * chunk_size
-        end = None if i == cores - 1 else (i + 1) * chunk_size
+        end = None if i == num_threads - 1 else (i + 1) * chunk_size
         imgs = image_paths[start:end]
         if not imgs:
             continue
@@ -1021,7 +1023,7 @@ def run_entry_exit_profiling(
     max_gap: Optional[float] = None,
     checkpoint: Optional[Union[str, Path]] = None,
     categories: str = "car,person",
-    cores: int = 1,
+    threads: int = 1,
     db_save: Optional[str] = None,
     report: Optional[str] = None,
     occupancy_csv: Optional[str] = None,
@@ -1051,7 +1053,7 @@ def run_entry_exit_profiling(
         max_gap (Optional[float]): Max gap in seconds for tracking. Defaults to None.
         checkpoint (Optional[Union[str, Path]]): Path to custom ResNet-50 weights. Defaults to None.
         categories (str): Comma-separated class suffix list to target (e.g. 'car,person'). Defaults to 'car,person'.
-        cores (int): Number of parallel CPU threads to extract features. Defaults to 1.
+        threads (int): Number of parallel CPU threads to extract features. Defaults to 1.
         db_save (Optional[str]): Filepath to serialize final ProfileDatabase. Defaults to None.
         report (Optional[str]): Filepath to save summary JSON report. Defaults to None.
         occupancy_csv (Optional[str]): Filepath to save the occupancy timeline as CSV. Defaults to None.
@@ -1073,7 +1075,7 @@ def run_entry_exit_profiling(
     same_directory = entry_folder.resolve() == exit_folder.resolve()
 
     # Convert direction parameters to Direction Enum if they are strings
-    def to_enum(d):
+    def to_enum(d : Union[str, Direction]):
         """
         Converts a raw string or direction object to a Direction Enum.
 
@@ -1149,7 +1151,7 @@ def run_entry_exit_profiling(
     if entry_images:
         logger.info("Processing entry directory images...")
         entry_results = extract_features_for_directory(
-            entry_images, model, device, transform, cores=cores
+            entry_images, model, device, transform, num_threads=threads
         )
     entry_db, entry_grouped = track_entities_in_directory(
         entry_results,
@@ -1170,7 +1172,7 @@ def run_entry_exit_profiling(
                 "flipping exit crops before feature extraction."
             )
         exit_results = extract_features_for_directory(
-            exit_images, model, device, transform, cores=cores, flip=same_directory
+            exit_images, model, device, transform, num_threads=threads, flip=same_directory
         )
     exit_db, exit_grouped = track_entities_in_directory(
         exit_results,
@@ -1281,12 +1283,6 @@ def run_entry_exit_profiling(
 
 
 def main() -> None:
-    """
-    Main CLI entry point for the image entity profiler script.
-
-    Raises:
-        SystemExit: If invalid configuration options are provided or model loading fails.
-    """
     parser = argparse.ArgumentParser(
         description="Extract features and track unique entities chronologically across images."
     )
@@ -1307,10 +1303,10 @@ def main() -> None:
     )
     parser.add_argument(
         "-c",
-        "--cores",
+        "--threads",
         type=int,
         default=1,
-        help="Number of CPU cores to allocate for feature extraction (default: 1).",
+        help="Number of CPU threads to allocate for feature extraction (default: 1).",
     )
     parser.add_argument(
         "-t",
@@ -1402,10 +1398,10 @@ def main() -> None:
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
 
-    if args.cores <= 0:
-        logger.error("The number of allocated CPU cores must be at least 1.")
+    if args.threads <= 0:
+        logger.error("The number of allocated CPU threads must be at least 1.")
         sys.exit(1)
-    thread_count = args.cores
+    thread_count = args.threads
 
     ratio_threshold = args.ratio_threshold if args.ratio_threshold > 0 else None
 
@@ -1422,7 +1418,7 @@ def main() -> None:
             max_gap=args.max_gap,
             checkpoint=args.checkpoint,
             categories=args.categories,
-            cores=args.cores,
+            threads=args.threads,
             db_save=args.db_save,
             report=args.report,
             occupancy_csv=args.occupancy_csv,
@@ -1468,7 +1464,7 @@ def main() -> None:
 
         # Phase 1: Parallel feature extraction
         results_dict = extract_features_for_directory(
-            all_images, model, device, transform, cores=thread_count
+            all_images, model, device, transform, num_threads=thread_count
         )
 
         # Phase 2: Chronological Re-identification (Sequential)

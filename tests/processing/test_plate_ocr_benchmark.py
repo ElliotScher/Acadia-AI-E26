@@ -103,9 +103,7 @@ def test_run_plate_ocr_benchmark_skips_missing_images(tmp_path):
     _write_dummy_image(tmp_path / "exists.jpg")
 
     gt_path = tmp_path / "ground_truth.json"
-    gt_path.write_text(
-        json.dumps({"exists.jpg": "ABC123", "missing.jpg": "DEF456"})
-    )
+    gt_path.write_text(json.dumps({"exists.jpg": "ABC123", "missing.jpg": "DEF456"}))
 
     with patch(
         "src.utility.plate_ocr_benchmark.extract_plate_text_via_ocr",
@@ -492,9 +490,7 @@ def test_render_html_report_contains_real_tables_and_key_figures(tmp_path):
     (tmp_path / "plate_manifest.json").write_text(json.dumps(manifest))
 
     gt_path = tmp_path / "ground_truth.json"
-    gt_path.write_text(
-        json.dumps({"cam1/a.jpg": "ABC123", "cam1/b.jpg": "ABD123"})
-    )
+    gt_path.write_text(json.dumps({"cam1/a.jpg": "ABC123", "cam1/b.jpg": "ABD123"}))
 
     predictions = iter(["ABC123", "ABC123"])
     with patch(

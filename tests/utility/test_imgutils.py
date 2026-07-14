@@ -35,7 +35,7 @@ def test_get_hsv_hist(dummy_bgr_image):
 def test_detect_entities(dummy_green_box_image):
     boxes = detect_entities(dummy_green_box_image)
     assert len(boxes) == 1
-    x, y, w, h = boxes[0]
+    x, y, w, h = boxes[0].x, boxes[0].y, boxes[0].w, boxes[0].h
     # Bounding box should enclose the green region (25, 25) to (55, 55)
     assert abs(x - 25) <= 2
     assert abs(y - 25) <= 2

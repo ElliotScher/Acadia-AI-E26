@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
-import torch
 from tqdm import tqdm
 from ultralytics import YOLO
 
@@ -48,25 +47,12 @@ class DetectionResult:
     ]  # List of (frame_idx, rectangle, label, confidence)
 
 
-def detect_gpus() -> List[str]:
-    """
-    Detects all available GPUs on the system.
-
-    Returns:
-        List[str]: Hardcoded to return an empty list as GPU support has been disabled.
-    """
-    return []
-
-
-def open_video_capture(
-    video_path: Union[str, Path], use_gpu: bool = False
-) -> cv2.VideoCapture:
+def open_video_capture(video_path: Union[str, Path]) -> cv2.VideoCapture:
     """
     Opens a cv2.VideoCapture object.
 
     Args:
         video_path (Union[str, Path]): Path to the video file.
-        use_gpu (bool): Optional GPU decode flag (ignored).
 
     Returns:
         cv2.VideoCapture: The opened VideoCapture object.
@@ -228,9 +214,7 @@ def process_videos(
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.5,
     target_classes: Optional[List[int]] = None,
-    cores: int = 1,
-    gpu_devices: Optional[List[str]] = None,
-    use_gpu_decode: bool = False,
+    threads: int = 1,
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
 ) -> List[DetectionResult]:
@@ -245,9 +229,7 @@ def process_videos(
         inclusion_region (Optional[Rectangle]): Optional spatial filter region.
         conf_threshold (float): Minimum confidence threshold for detections.
         target_classes (Optional[List[int]]): List of COCO class IDs to filter.
-        cores (int): Number of worker threads to spawn.
-        gpu_devices (Optional[List[str]]): List of GPU device strings to distribute workers across.
-        use_gpu_decode (bool): Whether to attempt GPU hardware-accelerated video decoding.
+        threads (int): Number of worker threads to spawn.
         plate_model_name (Optional[str]): Optional path to a separate YOLO model checkpoint
             trained specifically for license plate detection. When provided, detections from
             this model are included in the results labeled "license_plate". Defaults to None.
@@ -272,12 +254,12 @@ def process_videos(
     error_flag = threading.Event()
 
     # Limit queue size to avoid high memory consumption from loading many frames in RAM
-    frame_queue = queue.Queue(maxsize=cores * 4)
+    frame_queue = queue.Queue(maxsize=threads * 4)
 
     # Spawn worker threads
     worker_threads = []
-    for i in range(cores):
-        device = gpu_devices[i % len(gpu_devices)] if gpu_devices else "cpu"
+    for i in range(threads):
+        device = "cpu"
         t = threading.Thread(
             target=_frame_worker,
             args=(
@@ -305,7 +287,7 @@ def process_videos(
             if error_flag.is_set():
                 break
 
-            cap = open_video_capture(video_path, use_gpu=use_gpu_decode)
+            cap = open_video_capture(video_path)
             if not cap.isOpened():
                 logger.error("Failed to open video %s", video_path)
                 continue
@@ -347,8 +329,8 @@ def process_videos(
         logger.error("Error during video frames generation: %s", e)
         error_flag.set()
 
-    # Send termination sentinels to all worker threads
-    for _ in range(cores):
+    # Send termination to all worker threads
+    for _ in range(threads):
         frame_queue.put(None)
 
     # Wait for all workers to finish
@@ -369,7 +351,6 @@ def save_annotated_videos(
     results: List[DetectionResult],
     input_folder: Path,
     output_folder: Path,
-    use_gpu_decode: bool = False,
 ) -> None:
     """
     Saves detection results to disk with annotations.
@@ -378,7 +359,6 @@ def save_annotated_videos(
         results (List[DetectionResult]): YOLO detection outputs.
         input_folder (Path): Source directory for relative path resolution.
         output_folder (Path): Destination directory for saved videos.
-        use_gpu_decode (bool): Whether to attempt GPU hardware-accelerated video decoding.
     """
     # Auto-detect the best working encoder once before processing
     import os
@@ -409,7 +389,7 @@ def save_annotated_videos(
     # Count total frames of all videos for the tqdm progress bar
     total_frames = 0
     for res in results:
-        cap = open_video_capture(res.video_path, use_gpu=use_gpu_decode)
+        cap = open_video_capture(res.video_path)
         if cap.isOpened():
             try:
                 val = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -429,7 +409,7 @@ def save_annotated_videos(
         out_path = output_folder / video_path.relative_to(input_folder)
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        cap = open_video_capture(video_path, use_gpu=use_gpu_decode)
+        cap = open_video_capture(video_path)
         if not cap.isOpened():
             logger.error(
                 "Failed to open input video for saving annotations: %s", video_path
@@ -494,13 +474,7 @@ def save_annotated_videos(
     os.environ.pop("OPENCV_FFMPEG_WRITER_OPTIONS", None)
 
 
-# thread_worker removed as processing is now parallelized at the frame level
-
-
 def main() -> None:
-    """
-    Main CLI entry point for YOLO video detection script.
-    """
     parser = argparse.ArgumentParser(
         description="Process videos in an input directory using YOLO and save results to an output directory."
     )
@@ -514,11 +488,11 @@ def main() -> None:
         help="YOLO model weights to use (default: yolo26s.pt).",
     )
     parser.add_argument(
-        "-c",
-        "--cores",
+        "-t",
+        "--threads",
         type=int,
         default=1,
-        help="Number of CPU cores to allocate to YOLO detections (default: 1).",
+        help="Number of CPU threads to allocate to YOLO detections (default: 1).",
     )
     parser.add_argument(
         "--no-gpu",
@@ -571,35 +545,14 @@ def main() -> None:
     from src.utility.loggingutils import setup_logging_and_paths
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
+    assert input_folder is not None and output_folder is not None
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    if args.cores <= 0:
-        logger.error("The number of allocated CPU cores/threads must be at least 1.")
+    if args.threads <= 0:
+        logger.error("The number of allocated CPU threads must be at least 1.")
         sys.exit(1)
-    thread_count = args.cores
-
-    # Determine GPU availability
-    gpu_devices = []
-    if not args.no_gpu:
-        gpu_devices = detect_gpus()
-
-    use_gpu_decode = len(gpu_devices) > 0
-
-    try:
-        torch.set_num_threads(1)
-    except RuntimeError:
-        pass
-    try:
-        torch.set_num_interop_threads(1)
-    except RuntimeError:
-        pass
-
-    logger.info("Allocating %d thread(s) for video processing...", thread_count)
-    if gpu_devices:
-        logger.info("GPU acceleration enabled. Detected GPU(s): %s", gpu_devices)
-    else:
-        logger.info("GPU acceleration disabled or not found. Using CPU.")
+    thread_count = args.threads
 
     # --classes selects everything this run detects: COCO category IDs run through
     # the general-purpose model, and the special 'plate' token runs the plate
@@ -695,7 +648,7 @@ def main() -> None:
     # Count total frames of all videos for the tqdm progress bar
     total_frames = 0
     for video_path in all_videos:
-        cap = open_video_capture(video_path, use_gpu=use_gpu_decode)
+        cap = open_video_capture(video_path)
         if cap.isOpened():
             try:
                 val = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -716,9 +669,7 @@ def main() -> None:
         inclusion_region=inclusion_region,
         conf_threshold=args.conf,
         target_classes=target_classes,
-        cores=thread_count,
-        gpu_devices=gpu_devices,
-        use_gpu_decode=use_gpu_decode,
+        threads=thread_count,
         plate_model_name=plate_model_name,
         run_base_model=run_base_model,
     )
@@ -731,7 +682,6 @@ def main() -> None:
             all_results,
             input_folder,
             output_folder,
-            use_gpu_decode=use_gpu_decode,
         )
     else:
         logger.info("Skipping saving annotated videos as requested.")
