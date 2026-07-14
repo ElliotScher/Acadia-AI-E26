@@ -1,4 +1,3 @@
-from sympy.integrals.meijerint import z
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -98,6 +97,23 @@ class EntitiesTab(QtWidgets.QWidget):
         else:
             return list(self.session.scalars(select(Entity).distinct()))
 
+    @QtCore.Slot(Entity)
+    def focusEntity(self, entity: Entity):
+        if entity.id not in self.galleryModel.results:
+            return
+        i = self.galleryModel.results.index(entity.id)
+        # this is scary, and should ideally be removed
+        while i >= self.galleryModel.rowCount():
+            if not self.galleryModel.canFetchMore(QtCore.QModelIndex()):
+                raise Exception(f"Failed to find {entity} in the entity tab. Yikes!")
+            self.galleryModel.fetchMore(QtCore.QModelIndex())
+        index = self.galleryModel.index(i, 0)
+        self.gallery.scrollTo(index)
+        self.gallery.selectionModel().select(
+            QtCore.QItemSelection(index, index),
+            QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
+        )
+
 
 class EntityGallery(QtWidgets.QListView):
     def __init__(self):
@@ -141,9 +157,7 @@ class GalleryModel(QtCore.QAbstractListModel):
         return self.getById(self.results[index.row()])
 
     def getById(self, id: int) -> Entity:
-        return self.session.scalar(
-            select(Entity).where(Entity.id == id)
-        )  # type: ignore
+        return self.session.scalar(select(Entity).where(Entity.id == id))  # type: ignore
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -252,7 +266,7 @@ class EntityInfo(QtWidgets.QGroupBox):
             button.setIcon(buttonicon)
             button.setIconSize(QtCore.QSize(15, 15))
             button.setFixedSize(QtCore.QSize(25, 25))
-            button.clicked.connect(lambda: self.openInImageTab(instance.image))
+            button.clicked.connect(lambda: self.imageOpened.emit(instance.image))
             layout.addWidget(button)
             self.images.addItem(item)
             if instance.image_id == latest.id:
@@ -286,9 +300,6 @@ class EntityInfo(QtWidgets.QGroupBox):
             return
         instance = self.instances[selection[0].row()]
         self.viewer.setInstance(instance.image, instance)
-
-    def openInImageTab(self, image: Image):
-        self.imageOpened.emit(image)
 
 
 class EntityViewer(QtWidgets.QGraphicsView):
