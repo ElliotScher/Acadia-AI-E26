@@ -3,10 +3,12 @@ from pathlib import Path
 import cv2 as cv
 from ultralytics import YOLO
 
-yoloModel = "yolov8n.pt"
+yoloModel = "yolo26n.pt"
 targetClasses = {"person", "car", "bicycle"}
-confidence = 0.4
+confidence = 0.25
 groupDistance = 60
+sizeRatioThreshold = 2.5
+imgSize = 1280
 
 # INSERT FILE PATH HERE
 inputPath = " "
@@ -48,10 +50,27 @@ def _boxes_close(a, b, distance):
     noOverlap = bx2 < ax1e or bx1 > ax2e or by2 < ay1e or by1 > ay2e
     return not noOverlap
 
-# Groups nearby detections into single combined boxes, REGARDLESS of class --
-# e.g. a person and a bike standing close together become one cluster.
+
+# Checks whether two boxes are similar enough in SIZE to be considered
+# at roughly the same distance from the camera. Uses box area; a person
+# far away has a much smaller box area than a person standing close up.
+def _similar_size(a, b, maxRatio):
+    aArea = (a[2] - a[0]) * (a[3] - a[1])
+    bArea = (b[2] - b[0]) * (b[3] - b[1])
+
+    if aArea <= 0 or bArea <= 0:
+        return False
+
+    ratio = max(aArea, bArea) / min(aArea, bArea)
+    return ratio <= maxRatio
+
+# Groups nearby, SIMILARLY-SIZED detections into single combined boxes,
+# regardless of class -- e.g. a person and a bike standing close together
+# become one cluster. Boxes only merge if they're both close together AND
+# roughly the same size, so a close-up person won't merge with a group of
+# small, far-away people just because they're near each other in the frame.
 # Each resulting cluster reports how many of each class it contains.
-def groupDetections(detections, distance=groupDistance):
+def groupDetections(detections, distance=groupDistance, maxSizeRatio=sizeRatioThreshold):
     n = len(detections)
     parent = list(range(n))
 
@@ -66,12 +85,15 @@ def groupDetections(detections, distance=groupDistance):
         if ri != rj:
             parent[ri] = rj
 
-    # compare every pair of boxes regardless of class -- proximity alone
-    # decides whether they belong to the same cluster
+    # boxes only join the same cluster if they're both close together
+    # AND roughly the same size -- proximity alone isn't enough
     for i in range(n):
         for j in range(i+1, n):
-            if _boxes_close(detections[i], detections[j], distance):
-                union(i, j)
+            if not _boxes_close(detections[i], detections[j], distance):
+                continue
+            if not _similar_size(detections[i], detections[j], maxSizeRatio):
+                continue
+            union(i, j)
 
     group = {}
     for i in range(n):
@@ -126,7 +148,7 @@ def process_image(model, imagePaths, inputDIR, outputDIR):
 
     for i, imgPath in enumerate(imagePaths, 1): 
         try:
-            result = model(str(imgPath), conf=confidence, verbose=False)[0]
+            result = model(str(imgPath), conf=confidence, imgsz=imgSize, verbose=False)[0]
         except Exception as e:
             print(f"[{i}/{total}] {imgPath.name}: SKIPPED ({e})")
             continue
