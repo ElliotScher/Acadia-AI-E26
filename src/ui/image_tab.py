@@ -331,35 +331,25 @@ class ImageViewer(QtWidgets.QGraphicsView):
 
     def set(self, image: Image, instances: list[Instance]):
         self.thisScene.clear()
-
         pixmap = QtGui.QPixmap(image.path)
-        self.resize(pixmap.width(), pixmap.height())
-        self.pixmapItem = self.thisScene.addPixmap(QtGui.QPixmap())
-        self.pixmapItem.setPixmap(pixmap)
-        self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
-
+        pixmapItem = self.thisScene.addPixmap(pixmap)
+        pen = QtGui.QPen()
+        pen.setWidth(int((pixmap.width() + pixmap.height()) / 500))
         for i in range(len(instances)):
+            pen.setColor(colors[i % len(colors)])
             instance = instances[i]
             self.thisScene.addRect(
                 instance.x,
                 instance.y,
                 instance.width,
                 instance.height,
-                self.getpen(colors[i % len(colors)]),
+                pen,
             )
+        self.fitInView(pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.pixmapItem:
-            try:
-                self.fitInView(
-                    self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio
-                )
-            except:
-                pass
-
-    @staticmethod
-    def getpen(color: str) -> QtGui.QPen:
-        pen = QtGui.QPen(color)
-        pen.setWidth(10)
-        return pen
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
+            factor = 1 + event.angleDelta().y() / 1000
+            self.scale(factor, factor)
+        else:
+            super().wheelEvent(event)

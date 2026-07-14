@@ -345,7 +345,7 @@ class EntityViewer(QtWidgets.QGraphicsView):
         )
 
     def wheelEvent(self, event: QtGui.QWheelEvent):
-        if event.modifiers() == QtCore.Qt.KeyboardModifier.ShiftModifier:
+        if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
             factor = 1 + event.angleDelta().y() / 1000
             self.scale(factor, factor)
         else:
