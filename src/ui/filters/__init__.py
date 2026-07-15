@@ -96,7 +96,7 @@ class FilterRow(QtWidgets.QGroupBox):
 
     @QtCore.Slot()
     def removeFilterRow(self):
-        self.parentWidget().layout().removeWidget(self) # type: ignore
+        self.parentWidget().layout().removeWidget(self)  # type: ignore
         self.deleteLater()
         self.deleted = True
         self.changed.emit()

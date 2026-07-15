@@ -161,16 +161,6 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
-    
-    def analyzeClustersFiltered(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.analyzeClusters(True)
-
-    @QtCore.Slot()
-    def analyzeClustersAll(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.analyzeClusters(False)
-
 
     def warnDialog(self, msg: str):
         d = QtWidgets.QMessageBox()
@@ -228,21 +218,21 @@ class Root(QtWidgets.QMainWindow):
                 subprocess.call(("start", options.path), shell=True)
             else:
                 subprocess.call(("xdg-open", options.path))
-    
+
     @QtCore.Slot()
     def doAnalyzeClusters(self, images: list[Image] | list[Entity]):
         if not hasattr(self, "session"):
             return
-        
+
         if len(images) > 0 and isinstance(images[0], Entity):
             actualImages: list[Image] = []
             entity: Entity
-            for entity in images: # type: ignore
+            for entity in images:  # type: ignore
                 for instance in entity.get_instances(self.session):
                     if instance.image not in actualImages:
                         actualImages.append(instance.image)
         else:
-            actualImages: list[Image] = images # type: ignore
+            actualImages: list[Image] = images  # type: ignore
 
         dialog = ClusterDialog(self.session, actualImages)
         dialog.accepted.connect(self.tabChanged)

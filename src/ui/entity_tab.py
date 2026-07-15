@@ -1,3 +1,4 @@
+import functools
 import typing
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -7,7 +8,12 @@ from sqlalchemy.orm import Session
 from detection.yolo import CLASS_ID_MAPPING
 from db.models import Entity, Instance, Image
 from filters import Filters
-from filters.entity import EntityDateFilter, EntityTimeFilter, EntityTypeFilter
+from filters.entity import (
+    EntityDateFilter,
+    EntityTimeFilter,
+    EntityTypeFilter,
+    ClusterSizeFilter,
+)
 
 colors = (
     "#00ff00",
@@ -42,7 +48,9 @@ class EntitiesTab(QtWidgets.QWidget):
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
-        self.filters = Filters((EntityDateFilter, EntityTimeFilter, EntityTypeFilter))
+        self.filters = Filters(
+            (EntityDateFilter, EntityTimeFilter, EntityTypeFilter, ClusterSizeFilter)
+        )
         gallerySideLayout.addWidget(self.filters)
         self.filters.changed.connect(self.refreshGallery)
         self.count = QtWidgets.QLabel("0 entities")
@@ -280,6 +288,38 @@ class EntityInfo(QtWidgets.QGroupBox):
             self.typeLabel.setText(
                 CLASS_ID_MAPPING[self.instances[0].type_id].title() + " seen in:"
             )
+
+        if entity.cluster is not None:
+            self.clusterLabel.show()
+            self.clusterEntities.show()
+            self.entities = entity.get_entities_in_cluster(session)
+            self.clusterEntities.clear()
+            self.clusterLabel.setText(str(len(self.entities)) + " entities in cluster:")
+            for i in range(len(self.entities)):
+                listEntity = self.entities[i]
+                widget = QtWidgets.QWidget(self.clusterEntities)
+                widget.setFixedHeight(40)
+                layout = QtWidgets.QHBoxLayout(widget)
+                icon = QtGui.QIcon(listEntity.get_earliest_image(session).path)
+                iconWidget = QtWidgets.QLabel(parent=widget, pixmap=icon.pixmap(50, 50))
+                layout.addWidget(iconWidget)
+                item = QtWidgets.QListWidgetItem()
+                item.setSizeHint(QtCore.QSize(200, 40))
+                button = QtWidgets.QPushButton(parent=widget)
+                buttonicon = QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ViewFullscreen)
+                button.setIcon(buttonicon)
+                button.setIconSize(QtCore.QSize(15, 15))
+                button.setFixedSize(QtCore.QSize(25, 25))
+                button.clicked.connect(
+                    functools.partial(self.showEntity, listEntity, session)
+                )
+                layout.addWidget(button)
+                self.clusterEntities.addItem(item)
+                self.clusterEntities.setItemWidget(item, widget)
+        else:  # not sure why it says this is unreachable, this can be reached if an entities has not been assigned a cluster
+            self.clusterLabel.hide()
+            self.clusterEntities.hide()
+
         self.viewer.set(entity, session)
         self.info.show()
         self.placeholder.hide()
@@ -292,6 +332,12 @@ class EntityInfo(QtWidgets.QGroupBox):
         self.images = QtWidgets.QListWidget(parent=self)
         layout.addWidget(self.images)
         self.images.selectionModel().selectionChanged.connect(self.setViewImage)
+
+        self.clusterLabel = QtWidgets.QLabel(parent=self)
+        self.clusterLabel.setText("Entities in cluster:")
+        layout.addWidget(self.clusterLabel)
+        self.clusterEntities = QtWidgets.QListWidget(parent=self)
+        layout.addWidget(self.clusterEntities)
         return widget
 
     @QtCore.Slot()

@@ -30,7 +30,7 @@ class ClusterDialog(QtWidgets.QDialog):
         ratioLayout = QtWidgets.QHBoxLayout()
         ratioLayout.addWidget(QtWidgets.QLabel("Maximum size ratio"))
         self.ratio = QtWidgets.QDoubleSpinBox()
-        self.ratio.setRange(0, 1)
+        self.ratio.setRange(0, 10)
         self.ratio.setValue(2.5)
         self.ratio.setSingleStep(0.1)
         ratioLayout.addWidget(self.ratio)
@@ -56,9 +56,6 @@ class ClusterDialog(QtWidgets.QDialog):
             )
 
             for cluster in clusters:
-                if len(cluster.detections) <= 1:
-                    continue
-                
                 clusterId = randint(0, 99999999)
 
                 for detection in cluster.detections:

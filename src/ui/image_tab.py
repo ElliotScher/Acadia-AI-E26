@@ -14,6 +14,7 @@ from filters.image import (
     ImageDateFilter,
     AnalyzedFilter,
     NotAnalyzedFilter,
+    ClusterCountFilter,
 )
 from analyze_dialog import AnalyzeDialog
 from cluster_dialog import ClusterDialog
@@ -120,6 +121,7 @@ class ImageTab(QtWidgets.QWidget):
                 ImageDateFilter,
                 AnalyzedFilter,
                 NotAnalyzedFilter,
+                ClusterCountFilter,
             )
         )
         gallerySideLayout.addWidget(self.filters)
@@ -211,22 +213,6 @@ class ImageTab(QtWidgets.QWidget):
             QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
         )
         return True
-    @QtCore.Slot()
-    def analyzeClusters(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = ClusterDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
 
     @QtCore.Slot()
     def export(self, filtered: bool, path: str):
