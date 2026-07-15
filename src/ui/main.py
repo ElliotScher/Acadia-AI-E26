@@ -17,6 +17,7 @@ from db.models import Image, Entity
 from export_dialog import ExportDialog, ExportOptions
 from cluster_dialog import ClusterDialog
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -160,6 +161,16 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
+    
+    def analyzeClustersFiltered(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzeClusters(True)
+
+    @QtCore.Slot()
+    def analyzeClustersAll(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzeClusters(False)
+
 
     def warnDialog(self, msg: str):
         d = QtWidgets.QMessageBox()
