@@ -17,6 +17,7 @@ from filters.image import (
     NotAnalyzedFilter,
 )
 from analyze_dialog import AnalyzeDialog
+from cluster_dialog import ClusterDialog
 
 colors = (
     "#00ff00",
@@ -176,9 +177,6 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "session"):
             return
 
-        if not hasattr(self, "yoloModel"):
-            self.yoloModel = load_model("yolo26s.pt")
-
         images: list[Image] = []
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
@@ -188,6 +186,23 @@ class ImageTab(QtWidgets.QWidget):
             )
 
         dialog = AnalyzeDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
+    def analyzeClusters(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        images: list[Image] = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = ClusterDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 

@@ -123,6 +123,7 @@ class Detection:
     image_path: Path  # Path to the associated image
     cls_id: int  # COCO class
     conf: float = 0.0  # Confidence score
+    id: int = -1  # Optional identifier
 
 
 def load_model(model_name: str) -> YOLO:

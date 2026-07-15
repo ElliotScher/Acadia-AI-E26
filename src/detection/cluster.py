@@ -9,17 +9,29 @@ import threading
 from threading import Thread
 import torch
 
-from detection.yolo import Detection, CLASS_ID_MAPPING, TARGET_CLASSES, detect_objects, parse_detections, load_model
+from detection.yolo import (
+    Detection,
+    CLASS_ID_MAPPING,
+    TARGET_CLASSES,
+    detect_objects,
+    parse_detections,
+    load_model,
+)
+
 
 @dataclass
 class Cluster:
     """
     Struct representing a cluster detected in an image.
-    Holds the image coordinates of the bounding box and the
-    number of contained instances of each COCO class
+    Holds the image coordinates of the bounding box, the number of contained
+    instances of each COCO class, and a list of Detection structs
+    contained in the cluster.
     """
+
     box: tuple[int, int, int, int]  # (x1, y1, x2, y2) in image coordinates,
-    counts: dict[int, int] # number of instances of each COCO class
+    counts: dict[int, int]  # number of instances of each COCO class
+    detections: list[Detection]  # Detection structs in the cluster
+
 
 # Checks whether two boxes are within distance pixels of each other.
 def _boxes_close(a: Detection, b: Detection, distance: int):
@@ -46,7 +58,10 @@ def _similar_size(a: Detection, b: Detection, maxRatio: float):
     ratio = max(aArea, bArea) / min(aArea, bArea)
     return ratio <= maxRatio
 
-def process_clusters(detections: list[Detection], maxDistance: int, maxSizeRatio: float) -> list[Cluster]:
+
+def process_clusters(
+    detections: list[Detection], maxDistance: int, maxSizeRatio: float
+) -> list[Cluster]:
     n: int = len(detections)
     parent: list[int] = list(range(n))
 
@@ -55,7 +70,7 @@ def process_clusters(detections: list[Detection], maxDistance: int, maxSizeRatio
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
-    
+
     def union(i: int, j: int):
         ri, rj = find(i), find(j)
         if ri != rj:
@@ -64,7 +79,7 @@ def process_clusters(detections: list[Detection], maxDistance: int, maxSizeRatio
     # boxes only join the same cluster if they're both close together
     # AND roughly the same size -- proximity alone isn't enough
     for i in range(n):
-        for j in range(i+1, n):
+        for j in range(i + 1, n):
             if not _boxes_close(detections[i], detections[j], maxDistance):
                 continue
             if not _similar_size(detections[i], detections[j], maxSizeRatio):
@@ -75,7 +90,7 @@ def process_clusters(detections: list[Detection], maxDistance: int, maxSizeRatio
     for i in range(n):
         root = find(i)
         group.setdefault(root, []).append(i)
-    
+
     clusters: list[Cluster] = []
     for idxs in group.values():
         x1 = min(detections[i].box[0] for i in idxs)
@@ -88,8 +103,11 @@ def process_clusters(detections: list[Detection], maxDistance: int, maxSizeRatio
             cls_id = detections[i].cls_id
             classCounts[cls_id] = classCounts.get(cls_id, 0) + 1
 
-        clusters.append(Cluster((x1, y1, x2, y2), classCounts))
+        clusters.append(
+            Cluster((x1, y1, x2, y2), classCounts, list(detections[i] for i in idxs))
+        )
     return clusters
+
 
 def save_annotated_results(
     img_path: Path, clusters: list[Cluster], input_folder: Path, output_folder: Path
@@ -112,14 +130,29 @@ def save_annotated_results(
             x1, y1, x2, y2 = cluster.box
             image_copy = image.copy()
             cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 0), thickness=5)
-            text = ", ".join(f"{CLASS_ID_MAPPING[cls_id]} x{count}" for cls_id, count in cluster.counts.items())
-            cv2.putText(image_copy, text, (x1, max(y1 - 8, 0)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            text = ", ".join(
+                f"{CLASS_ID_MAPPING[cls_id]} x{count}"
+                for cls_id, count in cluster.counts.items()
+            )
+            cv2.putText(
+                image_copy,
+                text,
+                (x1, max(y1 - 8, 0)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2,
+            )
 
-            filename_text = "-".join(f"{CLASS_ID_MAPPING[cls_id]}-x{count}" for cls_id, count in cluster.counts.items())
+            filename_text = "-".join(
+                f"{CLASS_ID_MAPPING[cls_id]}-x{count}"
+                for cls_id, count in cluster.counts.items()
+            )
             out_path = out_path_base.with_name(
                 f"{out_path_base.stem}-{i}-{filename_text}{out_path_base.suffix}"
             )
             cv2.imwrite(str(out_path), image_copy)
+
 
 def process_single_image(
     model: YOLO,
@@ -130,7 +163,7 @@ def process_single_image(
     conf: float = 0.25,
     classes: list[int] = TARGET_CLASSES,
     maxDistance: int = 60,
-    maxSizeRatio: float = 2.5
+    maxSizeRatio: float = 2.5,
 ) -> list[Detection]:
     """
     Processes a single image: runs detection, parses results, and optionally saves output.
@@ -155,7 +188,7 @@ def process_image_worker(
     progress_bar: tqdm | None,
     classes: list[int] = TARGET_CLASSES,
     maxDistance: int = 60,
-    maxSizeRatio: float = 2.5
+    maxSizeRatio: float = 2.5,
 ) -> None:
     """
     Worker function executed by threads in batch mode.
@@ -177,7 +210,7 @@ def process_image_worker(
             conf=conf,
             classes=classes,
             maxDistance=maxDistance,
-            maxSizeRatio=maxSizeRatio
+            maxSizeRatio=maxSizeRatio,
         )
 
         if progress_bar:
@@ -195,7 +228,7 @@ def batch_detect_and_process(
     show_progress: bool = True,
     classes: list[int] = TARGET_CLASSES,
     max_distance: int = 60,
-    max_size_ratio: float = 2.5
+    max_size_ratio: float = 2.5,
 ) -> None:
     """
     Performs multi-threaded batch detection and processing on a list of images.
@@ -227,7 +260,7 @@ def batch_detect_and_process(
                 progress_bar,
                 classes,
                 max_distance,
-                max_size_ratio
+                max_size_ratio,
             ),
         )
         threads.append(thread)
@@ -269,13 +302,13 @@ def main() -> None:
         "--max-distance",
         type=int,
         default=60,
-        help="Maximum distance in pixels between two instances to consider them part of the same cluster."
+        help="Maximum distance in pixels between two instances to consider them part of the same cluster.",
     )
     parser.add_argument(
         "--max-ratio",
         type=float,
         default=2.5,
-        help="Maximum ratio between the sizes of two instances to consider them part of the same cluster."
+        help="Maximum ratio between the sizes of two instances to consider them part of the same cluster.",
     )
     parser.add_argument(
         "--classes",
@@ -367,6 +400,7 @@ def main() -> None:
         max_distance=args.max_distance,
         max_size_ratio=args.max_ratio,
     )
+
 
 if __name__ == "__main__":
     main()

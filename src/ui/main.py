@@ -12,6 +12,7 @@ import utility.parallel as upl
 from db import get_db
 from db.models import Image
 
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -63,6 +64,12 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeAll = QtGui.QAction("Analyze All", self)
         aAnalyzeAll.triggered.connect(self.analyzeAll)
         mAnalyze.addAction(aAnalyzeAll)
+        aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
+        aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
+        mAnalyze.addAction(aAnalyzeClustersFiltered)
+        aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
+        aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
+        mAnalyze.addAction(aAnalyzeClustersAll)
 
         mSelect = self.menuBar().addMenu("Select")
         aSelectAll = QtGui.QAction("Select All", self)
@@ -134,6 +141,16 @@ class Root(QtWidgets.QMainWindow):
     def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
+
+    @QtCore.Slot()
+    def analyzeClustersFiltered(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzeClusters(True)
+
+    @QtCore.Slot()
+    def analyzeClustersAll(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzeClusters(False)
 
 
 class EntitiesTab(QtWidgets.QWidget):

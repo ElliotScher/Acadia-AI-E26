@@ -21,11 +21,12 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+from pathlib import Path
 import datetime as dt
 import os
 import csv
 
-from detection.yolo import process_single_image, CLASS_ID_MAPPING
+from detection.yolo import process_single_image, CLASS_ID_MAPPING, Detection
 
 
 class Base(DeclarativeBase):
@@ -65,6 +66,9 @@ class Image(Base):
                 select(Entity).join(Instance).where(Instance.image_id == self.id)
             ).all()
         )
+
+    def get_detections(self, session: Session) -> list[Detection]:
+        return list(map(lambda i: i.to_detection(), self.get_instances(session)))
 
     @staticmethod
     def import_from_dir(session: Session, dir: str):
@@ -222,6 +226,16 @@ class Instance(Base):
 
     image: Mapped[Image] = relationship(back_populates="instances")
     entity: Mapped[Entity] = relationship(back_populates="instances")
+
+    def to_detection(self) -> Detection:
+        return Detection(
+            (self.x, self.y, self.x + self.width, self.y + self.height),
+            CLASS_ID_MAPPING[self.type_id],
+            Path(self.image.path).resolve(),
+            self.type_id,
+            self.confidence,
+            self.entity_id,
+        )
 
     def __repr__(self) -> str:
         return f"Instance({self.image_id}, {self.entity_id})"
