@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db.models import Image, Instance
-from detection.yolo import CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING
+from detection.image_yolo import load_model
 
 colors = (
     "#00ff00",
