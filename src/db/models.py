@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from pathlib import Path
+
 from sqlalchemy import (
     String,
     DateTime,
@@ -26,7 +29,7 @@ import os
 import csv
 
 from detection.classes import CLASS_ID_MAPPING
-
+from detection.pose_direction import process_single_image
 
 class Base(DeclarativeBase):
     pass
@@ -235,7 +238,7 @@ class Instance(Base):
         if self.type_id != 0 and self.type_id != 1:
             return
 
-        directions = process_single_image_pose_direction(
+        directions = process_single_image(
             model,
             Path(self.image.path).resolve(),
             Path(),

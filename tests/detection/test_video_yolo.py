@@ -46,13 +46,13 @@ def test_process_videos_basic():
         assert isinstance(results[0], DetectionResult)
         assert results[0].video_path == Path("dummy_input.mp4")
         assert len(results[0].boxes) == 1
-        frame_idx, rect, label, conf = results[0].boxes[0]
+        frame_idx, rect, coco_id, conf = results[0].boxes[0]
         assert frame_idx == 0
         assert rect.x == 10
         assert rect.y == 20
         assert rect.w == 90
         assert rect.h == 180
-        assert label == "car"
+        assert coco_id == 2
         assert conf == pytest.approx(0.85)
 
         # Verify calls
@@ -107,13 +107,13 @@ def test_process_videos_inclusion_region():
         # Assertions: only mock_box_inside should be detected (1 detection)
         assert len(results) == 1
         assert len(results[0].boxes) == 1
-        frame_idx, rect, label, conf = results[0].boxes[0]
+        frame_idx, rect, coco_id, conf = results[0].boxes[0]
         assert frame_idx == 0
         assert rect.x == 10
         assert rect.y == 10
         assert rect.w == 10
         assert rect.h == 10
-        assert label == "car"
+        assert coco_id == 2
         assert conf == pytest.approx(0.85)
 
         # Verify calls

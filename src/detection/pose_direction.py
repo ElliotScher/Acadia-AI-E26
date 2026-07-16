@@ -1,17 +1,17 @@
-import os
 import argparse
 import sys
-from dataclasses import dataclass
-from ultralytics.engine.results import Results
-from typing import Union
-from pathlib import Path
-from ultralytics import YOLO
-from PIL import Image
-import cv2
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 from threading import Thread
+from typing import Union
+
+import cv2
 import torch
+from PIL import Image
 from tqdm import tqdm
+from ultralytics import YOLO
+from ultralytics.engine.results import Results
 
 from detection.classes import TARGET_CLASSES
 from detection.image_yolo import load_model
