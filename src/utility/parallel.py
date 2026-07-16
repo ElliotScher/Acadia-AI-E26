@@ -45,29 +45,35 @@ class _T(QtCore.QObject):
     @QtCore.Slot(QtCore.QThread)
     def addThread(self, thread: QtCore.QThread):
         self.mutex.lock()
-        if thread in self.threads:
-            return
-        self.threads[thread] = 0
-        self.threadAdded.emit(thread)
-        self.mutex.unlock()
+        try:
+            if thread in self.threads:
+                return
+            self.threads[thread] = 0
+            self.threadAdded.emit(thread)
+        finally:
+            self.mutex.unlock()
 
     @QtCore.Slot()
     def progressThread(self, thread: QtCore.QThread, value: float):
         self.mutex.lock()
-        if thread not in self.threads:
-            return
-        self.threads[thread] = value
-        self.threadProgress.emit(thread, value)
-        self.mutex.unlock()
+        try:
+            if thread not in self.threads:
+                return
+            self.threads[thread] = value
+            self.threadProgress.emit(thread, value)
+        finally:
+            self.mutex.unlock()
 
     @QtCore.Slot()
     def removeThread(self, thread: QtCore.QThread):
         self.mutex.lock()
-        if thread not in self.threads:
-            return
-        del self.threads[thread]
-        self.threadRemoved.emit(thread)
-        self.mutex.unlock()
+        try:
+            if thread not in self.threads:
+                return
+            del self.threads[thread]
+            self.threadRemoved.emit(thread)
+        finally:
+            self.mutex.unlock()
 
     def spinText(self):
         if len(self.threads) == 0:
