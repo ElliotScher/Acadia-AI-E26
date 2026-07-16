@@ -1,16 +1,17 @@
 #!/usr/bin/env python
-
 import os
 import sys
-
+from pathlib import Path
 import image_tab as it
 from PySide6 import QtCore, QtGui, QtWidgets
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 import utility.parallel as upl
 from db import get_db
 from db.models import Image
+
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -63,6 +64,16 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeAll = QtGui.QAction("Analyze All", self)
         aAnalyzeAll.triggered.connect(self.analyzeAll)
         mAnalyze.addAction(aAnalyzeAll)
+        aAnalyzePoseDirection = QtGui.QAction(
+            "Analyze Filtered For Direction From Poses", self
+        )
+        aAnalyzePoseDirection.triggered.connect(self.analyzePoseDirection)
+        mAnalyze.addAction(aAnalyzePoseDirection)
+        aAnalyzeAllPoseDirection = QtGui.QAction(
+            "Analyze All For Direction From Poses", self
+        )
+        aAnalyzeAllPoseDirection.triggered.connect(self.analyzeAllPoseDirection)
+        mAnalyze.addAction(aAnalyzeAllPoseDirection)
 
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
@@ -106,6 +117,16 @@ class Root(QtWidgets.QMainWindow):
     def analyzeAll(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyze(False)
+
+    @QtCore.Slot()
+    def analyzePoseDirection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzePoseDirection(True)
+
+    @QtCore.Slot()
+    def analyzeAllPoseDirection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzePoseDirection(False)
 
 
 class EntitiesTab(QtWidgets.QWidget):
