@@ -1,13 +1,14 @@
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-from pathlib import Path
 import functools
 import math
+from pathlib import Path
 
-from db.models import Image, Instance
+from PySide6 import QtCore, QtWidgets
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 import utility.parallel as upl
-from detection.yolo import CLASS_ID_MAPPING, TARGET_CLASSES, load_model
+from db.models import Image, Instance
+from detection.image_yolo import load_model
 from detection.pose_direction import Direction, process_single_image
 
 
