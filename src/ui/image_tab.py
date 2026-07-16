@@ -1,6 +1,5 @@
 import typing
 
-from analyze_dialog import AnalyzeDialog
 from filters import Filters
 from filters.image import (
     AnalyzedFilter,
@@ -10,6 +9,9 @@ from filters.image import (
     NoEntityFilter,
     NotAnalyzedFilter,
 )
+
+from analyze_dialog import AnalyzeDialog
+from pose_direction_dialog import PoseDirectionDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -176,10 +178,7 @@ class ImageTab(QtWidgets.QWidget):
         if not hasattr(self, "session"):
             return
 
-        if not hasattr(self, "yoloModel"):
-            self.yoloModel = load_model("yolo26s.pt")
-
-        images: list[Image]
+        images: list[Image] = []
         if filtered:
             images = list(map(self.galleryModel.getById, self.galleryModel.results))
         else:
@@ -188,6 +187,22 @@ class ImageTab(QtWidgets.QWidget):
             )
 
         dialog = AnalyzeDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
+    def analyzePoseDirection(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = PoseDirectionDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
@@ -255,11 +270,21 @@ class ImageInfo(QtWidgets.QGroupBox):
         instancesText = ""
         for i in range(len(instances)):
             instance = instances[i]
+            directions = []
+            if instance.direction_fb == 1:
+                directions.append("front")
+            elif instance.direction_fb == -1:
+                directions.append("back")
+            if instance.direction_lr == 1:
+                directions.append("right")
+            elif instance.direction_lr == -1:
+                directions.append("left")
             instancesText += (
                 '<font color="'
                 + colors[i % len(colors)]
                 + '">'
                 + CLASS_ID_MAPPING[instance.type_id].title()
+                + (" (" + ", ".join(directions) + ")" if len(directions) else "")
                 + " "
                 + str(round(instance.confidence * 10000) / 100)
                 + "% confidence</font><br>"
