@@ -147,12 +147,7 @@ def test_normalize_plate_text(raw_text, expected):
 def test_extract_timestamp_via_ocr_parameterized(filename, expected_dt):
     from src.utility.imgutils import extract_timestamp_via_ocr
 
-    img_path = (
-        Path(
-            "/home/elliotscher/Documents/Development/WPI/Acadia-AI-E26/tests/data/images/OCR"
-        )
-        / filename
-    )
+    img_path = Path(__file__).parent.parent / "data" / "images" / "OCR" / filename
     ts = extract_timestamp_via_ocr(img_path)
 
     if expected_dt is None:
