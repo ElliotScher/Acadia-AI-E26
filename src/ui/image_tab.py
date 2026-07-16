@@ -1,21 +1,22 @@
 import typing
 
+from analyze_dialog import AnalyzeDialog
+from filters import Filters
+from filters.image import (
+    AnalyzedFilter,
+    EntityFilter,
+    ImageDateFilter,
+    ImageTimeFilter,
+    NoEntityFilter,
+    NotAnalyzedFilter,
+)
+from pose_direction_dialog import PoseDirectionDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from detection.yolo import CLASS_ID_MAPPING
-from db.models import Image, Instance, Entity
-from filters import Filters
-from filters.image import (
-    EntityFilter,
-    NoEntityFilter,
-    ImageTimeFilter,
-    ImageDateFilter,
-    AnalyzedFilter,
-    NotAnalyzedFilter,
-)
-from analyze_dialog import AnalyzeDialog
+from db.models import Entity, Image, Instance
+from detection.classes import CLASS_ID_MAPPING
 
 colors = (
     "#00ff00",
@@ -52,7 +53,7 @@ class GalleryModel(QtCore.QAbstractListModel):
 
     def getByIndex(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex
-    ) -> Image:
+    ) -> Image | None:
         return self.getById(self.results[index.row()])
 
     def getById(self, id: int) -> Image:
@@ -61,17 +62,19 @@ class GalleryModel(QtCore.QAbstractListModel):
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
     ) -> typing.Any:
-        if role == QtCore.Qt.ItemDataRole.DecorationRole:
-            data = self.getByIndex(index)
-            if data:
-                if data.id in self.thumbnails:
-                    return self.thumbnails[data.id]
-                else:
-                    if len(self.thumbnails) > 300:
-                        self.thumbnails: dict[int, QtGui.QIcon] = dict()
-                    img = QtGui.QIcon(data.path)
-                    self.thumbnails[data.id] = img
-                    return img
+        if role != QtCore.Qt.ItemDataRole.DecorationRole:
+            return
+        data = self.getByIndex(index)
+        if not data:
+            return
+        if data.id in self.thumbnails:
+            return self.thumbnails[data.id]
+        else:
+            if len(self.thumbnails) > 300:
+                self.thumbnails: dict[int, QtGui.QIcon] = dict()
+            img = QtGui.QIcon(data.path)
+            self.thumbnails[data.id] = img
+            return img
 
     def rowCount(
         self,
@@ -135,17 +138,15 @@ class ImageTab(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def newselection(self):
-        selection: list[Image] = list(
-            map(self.galleryModel.getByIndex, self.gallery.selectedIndexes())
-        )
-        self.imageInfo.showImage(
-            selection[0] if len(selection) > 0 else None, self.session
-        )
+        selection = self.gallery.selectedIndexes()
+        image: Image | None = None
+        if len(selection) > 0:
+            image = self.galleryModel.getByIndex(selection[0])
+        self.imageInfo.showImage(image, self.session)
 
     @QtCore.Slot()
     def setsession(self, session: Session):
         self.session = session
-
         self.refreshGallery()
 
     @QtCore.Slot()
@@ -211,6 +212,36 @@ class ImageTab(QtWidgets.QWidget):
         )
         return True
 
+    @QtCore.Slot()
+    def analyzePoseDirection(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = PoseDirectionDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
+    def export(self, filtered: bool, path: str):
+        if not hasattr(self, "session"):
+            return
+
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        Image.export_to_csv(self.session, images, path)
+
 
 class ImageGallery(QtWidgets.QListView):
     def __init__(self):
@@ -220,19 +251,10 @@ class ImageGallery(QtWidgets.QListView):
         self.setViewMode(self.ViewMode.IconMode)
         self.setVerticalScrollMode(self.ScrollMode.ScrollPerPixel)
         self.setResizeMode(self.ResizeMode.Adjust)
-        self.setSelectionMode(self.SelectionMode.MultiSelection)
+        self.setSelectionMode(self.SelectionMode.SingleSelection)
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
-
-    @QtCore.Slot()
-    def invertSelection(self):
-        first = self.model().createIndex(0, 0)
-        last = self.model().createIndex(self.model().rowCount() - 1, 0)
-        self.selectionModel().select(
-            QtCore.QItemSelection(first, last),
-            self.selectionModel().SelectionFlag.Toggle,
-        )
 
 
 class ImageInfo(QtWidgets.QGroupBox):

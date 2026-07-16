@@ -40,6 +40,9 @@ venv
 *.jpg
 .DS_Store
 
+# OCR test fixtures needed by the test suite (tracked via Git LFS)
+!tests/data/images/OCR/*.jpg
+
 # Virtual Environments
 .env/
 .venv/
@@ -68,3 +71,7 @@ build/
 *.csv
 #.envrc
 .envrc
+
+
+# MediaPipe Models
+*.task

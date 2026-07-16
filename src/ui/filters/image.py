@@ -2,7 +2,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 from sqlalchemy import Select, and_, func
 from db.models import Image, Instance
-from detection.yolo import CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING
 from filters import Filter, DateFilter, TimeFilter
 
 
