@@ -6,12 +6,13 @@ from pathlib import Path
 import functools
 
 from db.models import Image, Instance, Entity
-from detection.yolo import (
+from detection.classes import (
     CLASS_ID_MAPPING,
-    TARGET_CLASSES,
-    process_single_image,
-    load_model,
-    Detection,
+    TARGET_CLASSES
+)
+from detection.image_yolo import (
+    process_images,
+    DetectionResult,
 )
 import utility.parallel as upl
 
@@ -21,7 +22,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         super().__init__(*args, **kwargs)
 
         self.threadsRunning = 0
-        self.results: list[dict[int, list[Detection]]] = list()
+        self.results: list[dict[int, list[DetectionResult]]] = list()
 
         self.session = session
         self.images: list[tuple[int, str]] = list(map(lambda i: (i.id, i.path), images))
@@ -93,7 +94,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         imagesPerThread = math.ceil(len(self.images) / threadCount)
 
         self.threadsRunning = 0
-        self.results: list[dict[int, list[Detection]]] = list()
+        self.results: list[dict[int, list[DetectionResult]]] = list()
 
         for i in range(threadCount):
             images = self.images[(i * imagesPerThread) : ((i + 1) * imagesPerThread)]
@@ -112,15 +113,14 @@ class AnalyzeDialog(QtWidgets.QDialog):
         images: list[tuple[int, str]],
         minConfidence: float,
         targetClasses: list[int],
-    ) -> dict[int, list[Detection]]:
-        results: dict[int, list[Detection]] = dict()
+    ) -> dict[int, list[DetectionResult]]:
+        results: dict[int, list[DetectionResult]] = dict()
         for image in images:
-            results[image[0]] = process_single_image(
-                load_model("yolo26s.pt"),
-                Path(image[1]).resolve(),
-                Path(),
-                Path(),
-                False,
+            results[image[0]] = process_images(
+                [Path(image[1]).resolve()],
+                "yolo26s.pt",
+                None,
+                None,
                 minConfidence,
                 targetClasses,
             )
@@ -129,7 +129,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         return results
 
     @QtCore.Slot()
-    def finishAnalysis(self, result: dict[int, list[Detection]]):
+    def finishAnalysis(self, result: dict[int, list[DetectionResult]]):
         self.results.append(result)
         self.threadsRunning -= 1
 

@@ -44,11 +44,20 @@ class DetectionResult:
     image: np.ndarray  # BGR image representation
     boxes: List[Tuple[Rectangle, str, float]]  # List of (rectangle, label, confidence)
 
+def load_model(model_name: str) -> YOLO:
+    """
+    Loads and returns a YOLO model from the given path or name.
+
+    Args:
+        model_name (str): YOLO weights name.
+    """
+    return YOLO(model_name)
+
 
 def process_images(
     img_paths: List[Path],
     model_name: str,
-    progress_bar: tqdm,
+    progress_bar: Optional[tqdm] = None,
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
     target_classes: Optional[List[int]] = None,
@@ -77,12 +86,14 @@ def process_images(
         thread_model = YOLO(model_name)
     except Exception as e:
         logger.error("Failed to load YOLO model '%s': %s", model_name, e)
-        progress_bar.update(len(img_paths))
+        if progress_bar:
+            progress_bar.update(len(img_paths))
         return []
 
     for img_path in img_paths:
         if img_path.suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp"]:
-            progress_bar.update(1)
+            if progress_bar:
+                progress_bar.update(1)
             continue
 
         try:
@@ -95,7 +106,8 @@ def process_images(
 
             image = cv2.imread(str(img_path))
             if image is None:
-                progress_bar.update(1)
+                if progress_bar:
+                    progress_bar.update(1)
                 continue
 
             boxes_found: List[Tuple[Rectangle, str, float]] = []
@@ -131,7 +143,8 @@ def process_images(
         except Exception as e:
             logger.error("Error processing image %s: %s", img_path, e)
         finally:
-            progress_bar.update(1)
+            if progress_bar:
+                progress_bar.update(1)
 
     return results_list
 

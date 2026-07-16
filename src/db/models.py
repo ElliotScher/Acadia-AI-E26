@@ -25,7 +25,7 @@ import datetime as dt
 import os
 import csv
 
-from detection.yolo import process_single_image, CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING
 
 
 class Base(DeclarativeBase):
