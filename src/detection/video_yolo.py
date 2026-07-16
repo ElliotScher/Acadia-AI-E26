@@ -424,10 +424,10 @@ def save_annotated_videos(
 
         # Group boxes by frame index for quick lookup
         boxes_by_frame: Dict[int, List[Tuple[Rectangle, int, float]]] = {}
-        for frame_idx, rect, id, conf in boxes:
+        for frame_idx, rect, coco_id, conf in boxes:
             if frame_idx not in boxes_by_frame:
                 boxes_by_frame[frame_idx] = []
-            boxes_by_frame[frame_idx].append((rect, id, conf))
+            boxes_by_frame[frame_idx].append((rect, coco_id, conf))
 
         frame_idx = 0
         expected_frames = 0
@@ -446,7 +446,7 @@ def save_annotated_videos(
                 # Draw rectangles on the frame - every detected class (including
                 # license plates) is drawn the same way, since only the classes
                 # actually requested via --classes ever appear here.
-                for rect, id, conf in boxes_by_frame[frame_idx]:
+                for rect, coco_id, conf in boxes_by_frame[frame_idx]:
                     cv2.rectangle(
                         frame,
                         (rect.x, rect.y),
@@ -690,8 +690,8 @@ def main() -> None:
     for res in all_results:
         relative_key = str(res.video_path.relative_to(input_folder))
         file_detections = []
-        for frame_idx, rect, id, conf in res.boxes:
-            label = CLASS_ID_MAPPING[id]
+        for frame_idx, rect, coco_id, conf in res.boxes:
+            label = CLASS_ID_MAPPING[coco_id]
             if label not in total_counts:
                 total_counts[label] = 0
             total_counts[label] += 1
@@ -700,7 +700,7 @@ def main() -> None:
                 {
                     "frame_index": frame_idx,
                     "box": [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h],
-                    "label": id,
+                    "label": coco_id,
                     "confidence": conf,
                 }
             )

@@ -389,8 +389,8 @@ def main() -> None:
     for res in all_results:
         relative_key = str(res.image_path.relative_to(input_folder))
         file_detections = []
-        for rect, id, conf in res.boxes:
-            label = CLASS_ID_MAPPING[id]
+        for rect, coco_id, conf in res.boxes:
+            label = CLASS_ID_MAPPING[coco_id]
             if label not in total_counts:
                 total_counts[label] = 0
             total_counts[label] += 1
@@ -398,7 +398,7 @@ def main() -> None:
             file_detections.append(
                 {
                     "box": [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h],
-                    "label": label,
+                    "label": coco_id,
                     "confidence": conf,
                 }
             )
