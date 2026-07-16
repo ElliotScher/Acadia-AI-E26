@@ -13,7 +13,7 @@ class Async(QtCore.QThread):
     the main thread with `QtWidgets.QApplication.instance().thread()`.
     """
 
-    result = QtCore.Signal(Any)
+    result = QtCore.Signal(list[DetectionResult])
 
     def __init__(self, name: str, fn: typing.Callable[[], Any]):
         super().__init__()

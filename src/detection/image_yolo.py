@@ -13,6 +13,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
+from detection.classes import CLASS_ID_MAPPING
 
 import cv2
 import numpy as np
@@ -37,12 +38,12 @@ class DetectionResult:
     Args:
         image_path (Path): Path to the source image.
         image (np.ndarray): BGR image representation.
-        boxes (List[Tuple[Rectangle, str, float]]): List of (rectangle, label, confidence) detections.
+        boxes (List[Tuple[Rectangle, int, float]]): List of (rectangle, id, confidence) detections.
     """
 
     image_path: Path
     image: np.ndarray  # BGR image representation
-    boxes: List[Tuple[Rectangle, str, float]]  # List of (rectangle, label, confidence)
+    boxes: List[Tuple[Rectangle, int, float]]  # List of (rectangle, id, confidence)
 
 def load_model(model_name: str) -> YOLO:
     """
@@ -110,15 +111,10 @@ def process_images(
                     progress_bar.update(1)
                 continue
 
-            boxes_found: List[Tuple[Rectangle, str, float]] = []
+            boxes_found: List[Tuple[Rectangle, int, float]] = []
             for r in results:
                 for box in r.boxes:
                     cls = int(box.cls[0])
-                    label = thread_model.names[cls]
-
-                    # Standardize transport categories to 'car'
-                    if label in ["car", "bus", "truck"]:
-                        label = "car"
 
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     w = x2 - x1
@@ -134,7 +130,7 @@ def process_images(
 
                     conf = float(box.conf[0])
                     rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                    boxes_found.append((rect, label, conf))
+                    boxes_found.append((rect, cls, conf))
 
             results_list.append(
                 DetectionResult(image_path=img_path, image=image, boxes=boxes_found)
@@ -389,11 +385,12 @@ def main() -> None:
     else:
         logger.info("Skipping saving annotated images as requested.")
 
-    detection_details: Dict[str, List[Dict[str, Union[List[int], str, float]]]] = {}
+    detection_details: Dict[str, List[Dict[str, Union[List[int], float]]]] = {}
     for res in all_results:
         relative_key = str(res.image_path.relative_to(input_folder))
         file_detections = []
-        for rect, label, conf in res.boxes:
+        for rect, id, conf in res.boxes:
+            label = CLASS_ID_MAPPING[id]
             if label not in total_counts:
                 total_counts[label] = 0
             total_counts[label] += 1

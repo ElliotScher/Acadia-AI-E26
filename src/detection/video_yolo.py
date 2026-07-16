@@ -14,6 +14,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
+from detection.classes import CLASS_ID_MAPPING
 
 import cv2
 from tqdm import tqdm
@@ -38,13 +39,13 @@ class DetectionResult:
 
     Args:
         video_path (Path): Path to the source video.
-        boxes (List[Tuple[int, Rectangle, str, float]]): List of (frame_idx, rectangle, label, confidence) detections.
+        boxes (List[Tuple[int, Rectangle, int, float]]): List of (frame_idx, rectangle, class_id, confidence) detections.
     """
 
     video_path: Path
     boxes: List[
-        Tuple[int, Rectangle, str, float]
-    ]  # List of (frame_idx, rectangle, label, confidence)
+        Tuple[int, Rectangle, int, float]
+    ]  # List of (frame_idx, rectangle, id, confidence)
 
 
 def open_video_capture(video_path: Union[str, Path]) -> cv2.VideoCapture:
@@ -63,7 +64,7 @@ def open_video_capture(video_path: Union[str, Path]) -> cv2.VideoCapture:
 def _frame_worker(
     model_name: str,
     frame_queue: queue.Queue,
-    results_by_video: Dict[Path, List[Tuple[int, Rectangle, str, float]]],
+    results_by_video: dict[Path, list[tuple[int, Rectangle, int, float]]],
     results_lock: threading.Lock,
     progress_bar: tqdm,
     inclusion_region: Optional[Rectangle],
@@ -80,7 +81,7 @@ def _frame_worker(
     Args:
         model_name (str): YOLO weights name or path.
         frame_queue (queue.Queue): Frame task queue.
-        results_by_video (Dict[Path, List[Tuple[int, Rectangle, str, float]]]): Shared results accumulator.
+        results_by_video (Dict[Path, List[Tuple[int, Rectangle, int, float]]]): Shared results accumulator.
         results_lock (threading.Lock): Thread lock for safe writes.
         progress_bar (tqdm): Shared progress bar instance.
         inclusion_region (Optional[Rectangle]): Optional spatial filter.
@@ -133,7 +134,7 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            boxes_found = []
+            boxes_found: list[tuple[int, Rectangle, int, float]] = []
 
             if thread_model is not None:
                 results = thread_model.predict(
@@ -147,11 +148,6 @@ def _frame_worker(
                 for r in results:
                     for box in r.boxes:
                         cls = int(box.cls[0])
-                        label = thread_model.names[cls]
-
-                        # Standardize transport categories to 'car'
-                        if label in ["car", "bus", "truck"]:
-                            label = "car"
 
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         w = x2 - x1
@@ -167,7 +163,7 @@ def _frame_worker(
 
                         conf = float(box.conf[0])
                         rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, label, conf))
+                        boxes_found.append((frame_idx, rect, cls, conf))
 
             if thread_plate_model is not None:
                 plate_results = thread_plate_model.predict(
@@ -191,7 +187,7 @@ def _frame_worker(
 
                         conf = float(box.conf[0])
                         rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, "license_plate", conf))
+                        boxes_found.append((frame_idx, rect, -1, conf))
 
             if boxes_found:
                 with results_lock:
@@ -249,7 +245,9 @@ def process_videos(
     if not valid_video_paths:
         return []
 
-    results_by_video = {vp: [] for vp in valid_video_paths}
+    results_by_video: dict[Path, list[tuple[int, Rectangle, int, float]]] = {
+        vp: [] for vp in valid_video_paths
+    }
     results_lock = threading.Lock()
     error_flag = threading.Event()
 
@@ -425,11 +423,11 @@ def save_annotated_videos(
         out = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
 
         # Group boxes by frame index for quick lookup
-        boxes_by_frame: Dict[int, List[Tuple[Rectangle, str, float]]] = {}
-        for frame_idx, rect, label, conf in boxes:
+        boxes_by_frame: Dict[int, List[Tuple[Rectangle, int, float]]] = {}
+        for frame_idx, rect, id, conf in boxes:
             if frame_idx not in boxes_by_frame:
                 boxes_by_frame[frame_idx] = []
-            boxes_by_frame[frame_idx].append((rect, label, conf))
+            boxes_by_frame[frame_idx].append((rect, id, conf))
 
         frame_idx = 0
         expected_frames = 0
@@ -448,7 +446,7 @@ def save_annotated_videos(
                 # Draw rectangles on the frame - every detected class (including
                 # license plates) is drawn the same way, since only the classes
                 # actually requested via --classes ever appear here.
-                for rect, label, conf in boxes_by_frame[frame_idx]:
+                for rect, id, conf in boxes_by_frame[frame_idx]:
                     cv2.rectangle(
                         frame,
                         (rect.x, rect.y),
@@ -686,13 +684,14 @@ def main() -> None:
     else:
         logger.info("Skipping saving annotated videos as requested.")
 
-    detection_details: Dict[str, List[Dict[str, Union[int, List[int], str, float]]]] = (
+    detection_details: Dict[str, List[Dict[str, Union[int, List[int], float]]]] = (
         {}
     )
     for res in all_results:
         relative_key = str(res.video_path.relative_to(input_folder))
         file_detections = []
-        for frame_idx, rect, label, conf in res.boxes:
+        for frame_idx, rect, id, conf in res.boxes:
+            label = CLASS_ID_MAPPING[id]
             if label not in total_counts:
                 total_counts[label] = 0
             total_counts[label] += 1
@@ -701,7 +700,7 @@ def main() -> None:
                 {
                     "frame_index": frame_idx,
                     "box": [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h],
-                    "label": label,
+                    "label": id,
                     "confidence": conf,
                 }
             )
