@@ -63,8 +63,12 @@ build/
 # YOLO Models
 *.pt
 
-# MediaPipe Models
-*.task
-
+# Database
+*.db
+*.csv
 #.envrc
 .envrc
+
+
+# MediaPipe Models
+*.task
