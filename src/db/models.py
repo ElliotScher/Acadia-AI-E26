@@ -120,9 +120,11 @@ class Image(Base):
             header = ["date", "time"]
             presentTypes = Instance.get_present_types(session)
             entityCounts: dict[int, int] = dict()
+            clusterCount = 0
             for presentType in presentTypes:
                 header.append(CLASS_ID_MAPPING[presentType] + " count")
                 entityCounts[presentType] = 0
+            header.append("cluster count")
 
             lastRangeTime: dt.datetime | None = None
             row: None | list[str | int] = None
@@ -144,6 +146,8 @@ class Image(Base):
                         for entity in entityCounts.keys():
                             row.append(entityCounts[entity])
                             entityCounts[entity] = 0
+                        row.append(clusterCount)
+                        clusterCount = 0
                         data.append(row)
 
                         if len(data) > 100:
@@ -156,12 +160,17 @@ class Image(Base):
                         rowTime.strftime("%H:%M:%S"),
                     ]
 
+                clusters = []
                 for instance in image.get_instances(session):
                     entityCounts[instance.type_id] += 1
+                    if instance.entity.cluster not in clusters:
+                        clusters.append(instance.entity.cluster)
+                clusterCount += len(clusters)
 
             if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
+                row.append(clusterCount)
                 data.append(row)
 
             if len(data) > 0:
@@ -240,6 +249,7 @@ class Entity(Base):
                 "end time",
                 "dwell time",
                 "type",
+                "cluster size",
             ]
 
             writer.writerows([header])
@@ -257,6 +267,70 @@ class Entity(Base):
                         "%H:%M:%S"
                     ),
                     CLASS_ID_MAPPING[entity.get_type_id(session)],
+                    (
+                        len(entity.get_entities_in_cluster(session))
+                        if entity.cluster
+                        else 0
+                    ),
+                ]
+
+                data.append(row)
+
+                if len(data) > 100:
+                    writer.writerows(data)
+                    data = []
+
+            if len(data) > 0:
+                writer.writerows(data)
+
+    @staticmethod
+    def export_clusters_to_csv(session: Session, entities: list[Entity], path: str):
+        with open(path, mode="w", newline="") as file:
+            writer = csv.writer(file)
+
+            header = [
+                "start date",
+                "start time",
+                "end date",
+                "end time",
+                "dwell time",
+                "cluster size",
+            ]
+
+            writer.writerows([header])
+            data = []
+            clusters: list[int] = []
+
+            for entity in entities:
+                if entity.cluster in clusters:
+                    continue
+
+                clusters.append(entity.cluster)
+
+                entities = entity.get_entities_in_cluster(session)
+                earliestImage = entities[0].get_earliest_image(session)
+                latestImage = entities[0].get_latest_image(session)
+
+                for i in range(1, len(entities)):
+                    entity = entities[i]
+
+                    thisEarliestImage = entity.get_earliest_image(session)
+                    if thisEarliestImage.datetime < earliestImage.datetime:
+                        earliestImage = thisEarliestImage
+                    thisLatestImage = entity.get_latest_image(session)
+                    if thisLatestImage.datetime < latestImage.datetime:
+                        latestImage = thisLatestImage
+
+                row = [
+                    earliestImage.datetime.strftime("%Y-%m-%d"),
+                    earliestImage.datetime.strftime("%H:%M:%S"),
+                    latestImage.datetime.strftime("%Y-%m-%d"),
+                    latestImage.datetime.strftime("%H:%M:%S"),
+                    (
+                        dt.datetime(1970, 1, 1)
+                        + (latestImage.datetime - earliestImage.datetime)
+                    ).strftime("%H:%M:%S"),
+                    len(entities),
                 ]
 
                 data.append(row)

@@ -204,6 +204,12 @@ class Root(QtWidgets.QMainWindow):
                 options.path,
                 options.interval,
             )
+        elif options.mode == "clusters":
+            Entity.export_clusters_to_csv(
+                self.session,
+                self.entitiesTab.getEntities(options.filtered),
+                options.path,
+            )
         else:
             Entity.export_to_csv(
                 self.session,
