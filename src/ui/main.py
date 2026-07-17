@@ -1,21 +1,22 @@
 #!/usr/bin/env python
 
 import os
+import platform
+import subprocess
 import sys
 import subprocess
 import platform
 
 from image_tab import ImageTab
 from entity_tab import EntitiesTab
+from export_dialog import ExportDialog, ExportOptions
+from cluster_dialog import ClusterDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
-
 import utility.parallel as upl
 from db import get_db
-from db.models import Image, Entity
-from export_dialog import ExportDialog, ExportOptions
-from cluster_dialog import ClusterDialog
+from db.models import Entity, Image
 
 
 class Root(QtWidgets.QMainWindow):
@@ -79,30 +80,28 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
         mAnalyze.addAction(aAnalyzeClustersAll)
 
-        mSelect = self.menuBar().addMenu("Select")
-        aSelectAll = QtGui.QAction("Select All", self)
-        aSelectAll.triggered.connect(self.selectAll)
-        aSelectAll.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
-        mSelect.addAction(aSelectAll)
-        aSelectDeselect = QtGui.QAction("Deselect All", self)
-        aSelectDeselect.triggered.connect(self.imageTab.gallery.clearSelection)
-        aSelectDeselect.setShortcut(QtGui.QKeySequence.StandardKey.Deselect)
-        mSelect.addAction(aSelectDeselect)
-        aSelectInvert = QtGui.QAction("Invert Selection", self)
-        aSelectInvert.triggered.connect(self.selectInverse)
-        mSelect.addAction(aSelectInvert)
+        aAnalyzePoseDirection = QtGui.QAction(
+            "Analyze Filtered For Direction From Poses", self
+        )
+        aAnalyzePoseDirection.triggered.connect(self.analyzePoseDirection)
+        mAnalyze.addAction(aAnalyzePoseDirection)
+        aAnalyzeAllPoseDirection = QtGui.QAction(
+            "Analyze All For Direction From Poses", self
+        )
+        aAnalyzeAllPoseDirection.triggered.connect(self.analyzeAllPoseDirection)
+        mAnalyze.addAction(aAnalyzeAllPoseDirection)
 
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        self.imageTab.setsession(self.session)
-        self.entitiesTab.setsession(self.session)
 
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
         thread = upl.Async("File Open", lambda: self._fileOpen(path))
+        thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.finished.connect(lambda: self.entitiesTab.setsession(self.session))
         thread.start()
 
     @QtCore.Slot()
@@ -116,21 +115,6 @@ class Root(QtWidgets.QMainWindow):
         dialog = ExportDialog(False)
         dialog.startExport.connect(self.doExport)
         dialog.exec()
-
-    @QtCore.Slot()
-    def selectAll(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.gallery.selectAll()
-
-    @QtCore.Slot()
-    def selectDeselect(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.gallery.clearSelection()
-
-    @QtCore.Slot()
-    def selectInverse(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.gallery.invertSelection()
 
     @QtCore.Slot()
     def analyzeFiltered(self):
@@ -161,6 +145,21 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
+    
+    def tabChanged(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.refreshGallery()
+        else:
+            self.entitiesTab.refreshGallery()
+
+    def analyzePoseDirection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzePoseDirection(True)
+
+    @QtCore.Slot()
+    def analyzeAllPoseDirection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzePoseDirection(False)
 
     def warnDialog(self, msg: str):
         d = QtWidgets.QMessageBox()
@@ -183,7 +182,7 @@ class Root(QtWidgets.QMainWindow):
     def openEntity(self, entity: Entity):
         r = self.entitiesTab.focusEntity(entity)
         if not r:
-            self.warnDialog("Image is not within the current image filters.")
+            self.warnDialog("Image is not within the current entity filters.")
             return
         if self.tabs.currentWidget() == self.imageTab:
             self.tabs.setCurrentWidget(self.entitiesTab)

@@ -50,7 +50,7 @@ class ClusterDialog(QtWidgets.QDialog):
     def analyze(self):
         for image in self.images:
             clusters = process_clusters(
-                image.get_detections(self.session),
+                image.to_detection_result(self.session),
                 self.distance.value(),
                 self.ratio.value(),
             )
@@ -58,9 +58,9 @@ class ClusterDialog(QtWidgets.QDialog):
             for cluster in clusters:
                 clusterId = randint(0, 99999999)
 
-                for detection in cluster.detections:
+                for detection in cluster.detections.boxes:
                     entity = self.session.scalar(
-                        select(Entity).where(Entity.id == detection.id)
+                        select(Entity).where(Entity.id == detection[1])
                     )
 
                     if entity is not None:

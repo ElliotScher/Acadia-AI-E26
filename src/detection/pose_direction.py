@@ -1,205 +1,176 @@
-from typing import List, Dict, Any, Tuple, Union
-import os
 import argparse
 import sys
-from pathlib import Path
-from dataclasses import dataclass
-import cv2
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 from threading import Thread
+from typing import Union
+
+import cv2
 import torch
-from ultralytics import YOLO
+from PIL import Image
 from tqdm import tqdm
+from ultralytics import YOLO
+from ultralytics.engine.results import Results
 
-# COCO classes: 0=person, 1=bicycle, 2=car, 3=motorcycle, 5=bus, 7=truck
-TARGET_CLASSES: List[int] = [0, 1, 2, 3, 5, 7]
+from detection.classes import TARGET_CLASSES
+from detection.image_yolo import load_model
 
-CLASS_MAPPING: Dict[str, str] = {
-    "person": "person",
-    "bicycle": "bike",
-    "motorcycle": "bike",
-    "car": "car",
-    "bus": "car",
-    "truck": "car",
-}
-
-CLASS_ID_MAPPING: Dict[int, str] = {
-    0: "person",
-    1: "bicycle",
-    2: "car",
-    3: "motorcycle",
-    4: "airplane",
-    5: "bus",
-    6: "train",
-    7: "truck",
-    8: "boat",
-    9: "traffic light",
-    10: "fire hydrant",
-    11: "stop sign",
-    12: "parking meter",
-    13: "bench",
-    14: "bird",
-    15: "cat",
-    16: "dog",
-    17: "horse",
-    18: "sheep",
-    19: "cow",
-    20: "elephant",
-    21: "bear",
-    22: "zebra",
-    23: "giraffe",
-    24: "backpack",
-    25: "umbrella",
-    26: "handbag",
-    27: "tie",
-    28: "suitcase",
-    29: "frisbee",
-    30: "skis",
-    31: "snowboard",
-    32: "sports ball",
-    33: "kite",
-    34: "baseball bat",
-    35: "baseball glove",
-    36: "skateboard",
-    37: "surfboard",
-    38: "tennis racket",
-    39: "bottle",
-    40: "wine glass",
-    41: "cup",
-    42: "fork",
-    43: "knife",
-    44: "spoon",
-    45: "bowl",
-    46: "banana",
-    47: "apple",
-    48: "sandwich",
-    49: "orange",
-    50: "broccoli",
-    51: "carrot",
-    52: "hot dog",
-    53: "pizza",
-    54: "donut",
-    55: "cake",
-    56: "chair",
-    57: "couch",
-    58: "potted plant",
-    59: "bed",
-    60: "dining table",
-    61: "toilet",
-    62: "tv",
-    63: "laptop",
-    64: "mouse",
-    65: "remote",
-    66: "keyboard",
-    67: "cell phone",
-    68: "microwave",
-    69: "oven",
-    70: "toaster",
-    71: "sink",
-    72: "refrigerator",
-    73: "book",
-    74: "clock",
-    75: "vase",
-    76: "scissors",
-    77: "teddy bear",
-    78: "hair drier",
-    79: "toothbrush",
-}
+left_points = (1, 3, 5, 7, 9, 11, 13, 15)
+right_points = (2, 4, 6, 8, 10, 12, 14, 16)
+front_points = (1, 2, 3, 9, 10)
+back_points = (5, 6, 11, 12)
 
 # Global object counter for CLI summaries and tracking
-total_counts: Dict[str, int] = {"car": 0, "person": 0, "bike": 0}
+total_counts: dict[str, int] = {
+    "left": 0,
+    "right": 0,
+    "front": 0,
+    "back": 0,
+    "unknown": 0,
+}
 total_counts_lock = threading.Lock()
 
 
 @dataclass
-class Detection:
+class Direction:
     """
-    Struct representing a detected object.
-    Holds the image coordinates of the bounding box, the category/label, the associated image path, and detection confidence.
+    Struct representing the direction of a detected object.
+    Holds the image coordinates of the bounding box, direction,
+    an informational label, and the associated image path.
     """
 
-    box: Tuple[int, int, int, int]  # (x1, y1, x2, y2) in image coordinates
-    label: str  # Target category ('car', 'person', or 'bike')
+    box: tuple[int, int, int, int]  # (x1, y1, x2, y2) in image coordinates
+    left_right: int  # -1 is left, 0 is unknown, 1 is right
+    front_back: int  # -1 is back, 0 is unknown, 1 is front
     image_path: Path  # Path to the associated image
-    cls_id: int  # COCO class
-    conf: float = 0.0  # Confidence score
-    id: int = -1  # Optional identifier
+    label: str  # Informational label
 
 
-def load_model(model_name: str) -> YOLO:
-    """
-    Loads and returns a YOLO model from the given path or name.
-    """
-    return YOLO(model_name)
-
-
-def detect_objects(
+def detect_pose(
     model: YOLO,
     img_path: Union[Path, str],
     conf: float = 0.25,
-    classes: List[int] = TARGET_CLASSES,
-) -> List[Any]:
+    classes: list[int] = TARGET_CLASSES,
+    box: tuple[int, int, int, int] | None = None,
+) -> list[Results]:
     """
     Runs YOLO model prediction and returns raw results.
     """
-    results = model.predict(
-        source=str(img_path), conf=conf, classes=classes, verbose=False
-    )
+    img = Image.open(img_path)
+    if box:
+        img = img.crop(box)
+    results = model.predict(source=img, conf=conf, classes=classes, verbose=False)
     return results
 
 
-def map_class(cls_id: int, cls_name: str) -> str:
+def parse_poses(
+    data: list[Results],
+    image_path: Union[Path, str],
+    min_conf: float = 0.25,
+    box: tuple[int, int, int, int] | None = None,
+    min_points: int = 2,
+) -> list[Direction]:
     """
-    Maps class ID or name to target categories: 'car', 'person', 'bike'.
-    If no mapping is found, returns the raw cls_name.
+    Parses raw YOLO results into a normalized list of Direction objects.
     """
-    # 1. Try mapping by class ID first
-    if cls_id in CLASS_ID_MAPPING:
-        return CLASS_ID_MAPPING[cls_id]
+    results: list[Direction] = []
+    for datum in data:
+        if datum.keypoints is None:
+            continue
 
-    # 2. Fall back to mapping by label name (case-insensitive)
-    name_lower = cls_name.lower()
-    if name_lower in CLASS_MAPPING:
-        return CLASS_MAPPING[name_lower]
-    if "car" in name_lower or "bus" in name_lower or "truck" in name_lower:
-        return "car"
-    if "bike" in name_lower or "bicycle" in name_lower or "motorcycle" in name_lower:
-        return "bike"
-    if "person" in name_lower:
-        return "person"
-    return cls_name
+        for person, kps in enumerate(datum.keypoints.xy):
+            left_total = 0
+            left_count = 0
+            right_total = 0
+            right_count = 0
+            front_total = 0
+            front_count = 0
+            back_total = 0
+            back_count = 0
 
+            x1 = 99999
+            y1 = 99999
+            x2 = 0
+            y2 = 0
 
-def parse_detections(
-    results: List[Any], model_names: Dict[int, str], img_path: Path
-) -> List[Detection]:
-    """
-    Parses raw YOLO results into a normalized list of Detection objects.
-    """
-    detections = []
-    for r in results:
-        for box in r.boxes:
-            cls_id = int(box.cls[0])
-            raw_label = model_names.get(cls_id, "")
-            normalized_label = map_class(cls_id, raw_label)
+            for i, (x, y) in enumerate(kps):
+                if datum.keypoints.conf[person][i].item() >= min_conf:  # type: ignore
+                    if i in left_points and x > 0 and y > 0:
+                        left_total += x
+                        left_count += 1
+                    elif i in right_points and x > 0 and y > 0:
+                        right_total += x
+                        right_count += 1
 
-            if normalized_label:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = float(box.conf[0])
-                detections.append(
-                    Detection(
-                        box=(x1, y1, x2, y2),
-                        label=normalized_label,
-                        image_path=img_path,
-                        conf=conf,
-                        cls_id=cls_id,
-                    )
+                    if i in front_points and x > 0 and y > 0:
+                        front_total += x
+                        front_count += 1
+                    elif i in back_points and x > 0 and y > 0:
+                        back_total += x
+                        back_count += 1
+
+                    if x < x1:
+                        x1 = int(x)
+                    if x > x2:
+                        x2 = int(x)
+                    if y < y1:
+                        y1 = int(y)
+                    if y > y2:
+                        y2 = int(y)
+
+            left_average = left_total / (left_count or 1)
+            right_average = right_total / (right_count or 1)
+            front_average = front_total / (front_count or 1)
+            back_average = back_total / (back_count or 1)
+
+            if (
+                front_average == back_average
+                or front_count < min_points
+                or back_count < min_points
+            ):
+                lr = 0
+            elif front_average < back_average:
+                lr = -1
+            else:
+                lr = 1
+
+            if (
+                left_average == right_average
+                or left_count < min_points
+                or right_count < min_points
+            ):
+                fb = 0
+            elif left_average < right_average:
+                fb = -1
+            else:
+                fb = 1
+
+            if lr == 0 and fb == 0:
+                label = "unknown"
+            elif abs(left_average - right_average) > abs(front_average - back_average):
+                label = "right" if lr == 1 else "left"
+            else:
+                label = "front" if fb == 1 else "back"
+
+            if not box:
+                box = (x1, y1, x2, y2)
+
+            results.append(
+                Direction(
+                    box,
+                    lr,
+                    fb,
+                    image_path if isinstance(image_path, Path) else Path(image_path),
+                    label,
                 )
-    return detections
+            )
+
+    return results
 
 
 def save_annotated_results(
-    img_path: Path, detections: List[Detection], input_folder: Path, output_folder: Path
+    img_path: Path, directions: list[Direction], input_folder: Path, output_folder: Path
 ) -> None:
     """
     Saves the annotated copies of the image (or the original if no detections)
@@ -212,12 +183,12 @@ def save_annotated_results(
     out_path_base = output_folder / img_path.relative_to(input_folder)
     out_path_base.parent.mkdir(parents=True, exist_ok=True)
 
-    if not detections:
+    if not directions:
         cv2.imwrite(str(out_path_base), image)
     else:
-        for i, det in enumerate(detections):
-            x1, y1, x2, y2 = det.box
-            label = det.label
+        for i, dir in enumerate(directions):
+            x1, y1, x2, y2 = dir.box
+            label = dir.label
             image_copy = image.copy()
             cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 0), thickness=5)
 
@@ -234,42 +205,46 @@ def process_single_image(
     output_folder: Path,
     save_images: bool = True,
     conf: float = 0.25,
-    classes: List[int] = TARGET_CLASSES,
-) -> List[Detection]:
+    classes: list[int] = TARGET_CLASSES,
+    box: tuple[int, int, int, int] | None = None,
+    min_points: int = 2,
+) -> list[Direction]:
     """
     Processes a single image: runs detection, parses results, and optionally saves output.
     """
-    raw_results = detect_objects(model, img_path, conf, classes)
-    detections = parse_detections(raw_results, model.names, img_path)
+    raw_results = detect_pose(model, img_path, conf, classes, box)
+    directions = parse_poses(raw_results, img_path, conf, box, min_points)
 
     if save_images:
-        save_annotated_results(img_path, detections, input_folder, output_folder)
+        save_annotated_results(img_path, directions, input_folder, output_folder)
 
-    return detections
+    return directions
 
 
 def process_image_worker(
-    img_paths: List[Path],
+    img_paths: list[Path],
     input_folder: Path,
     output_folder: Path,
     model_name: str,
     save_images: bool,
     conf: float,
     progress_bar: tqdm | None,
-    classes: List[int] = TARGET_CLASSES,
+    classes: list[int] = TARGET_CLASSES,
+    min_points: int = 2,
 ) -> None:
     """
     Worker function executed by threads in batch mode.
     """
     model = load_model(model_name)
 
-    for img_path in img_paths:
+    for i in range(len(img_paths)):
+        img_path = img_paths[i]
         if img_path.suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp"]:
             if progress_bar:
                 progress_bar.update(1)
             continue
 
-        detections = process_single_image(
+        directions = process_single_image(
             model=model,
             img_path=img_path,
             input_folder=input_folder,
@@ -277,11 +252,12 @@ def process_image_worker(
             save_images=save_images,
             conf=conf,
             classes=classes,
+            min_points=min_points,
         )
 
         # Update global counts
-        for det in detections:
-            label = det.label
+        for dir in directions:
+            label = dir.label
             with total_counts_lock:
                 total_counts[label] = total_counts.get(label, 0) + 1
 
@@ -290,7 +266,7 @@ def process_image_worker(
 
 
 def batch_detect_and_process(
-    img_paths: List[Path],
+    img_paths: list[Path],
     input_folder: Path,
     output_folder: Path,
     model_name: str,
@@ -298,7 +274,8 @@ def batch_detect_and_process(
     conf: float = 0.25,
     num_threads: int = 1,
     show_progress: bool = True,
-    classes: List[int] = TARGET_CLASSES,
+    classes: list[int] = TARGET_CLASSES,
+    min_points: int = 1,
 ) -> None:
     """
     Performs multi-threaded batch detection and processing on a list of images.
@@ -310,7 +287,7 @@ def batch_detect_and_process(
         )
 
     chunk_size = max(1, len(img_paths) // num_threads)
-    threads: List[Thread] = []
+    threads: list[Thread] = []
 
     for i in range(num_threads):
         start = i * chunk_size
@@ -329,6 +306,7 @@ def batch_detect_and_process(
                 conf,
                 progress_bar,
                 classes,
+                min_points,
             ),
         )
         threads.append(thread)
@@ -351,8 +329,8 @@ def main() -> None:
         "-m",
         "--model",
         type=str,
-        default="yolo26s.pt",
-        help="YOLO model weights to use (default: yolo26s.pt).",
+        default="yolo26s-pose.pt",
+        help="YOLO model weights to use (default: yolo26s-pose.pt).",
     )
     parser.add_argument(
         "-c",
@@ -365,6 +343,12 @@ def main() -> None:
         "--no-save",
         action="store_true",
         help="Do not save annotated images to the output directory.",
+    )
+    parser.add_argument(
+        "--min-points",
+        type=int,
+        default=2,
+        help="Minimum number of points that need to be detected in a particular direction to consider that direction",
     )
     parser.add_argument(
         "--classes",
@@ -444,13 +428,14 @@ def main() -> None:
         print("No matching images found in the input directory.")
         return
 
-    # Reset and initialize total counts for each class of interest
+    # Reset and initialize total counts for each direction
     with total_counts_lock:
         total_counts.clear()
-        for cls_id in classes_of_interest:
-            raw_label = model.names.get(cls_id, str(cls_id))
-            normalized_label = map_class(cls_id, raw_label)
-            total_counts[normalized_label] = 0
+        total_counts["left"] = 0
+        total_counts["right"] = 0
+        total_counts["front"] = 0
+        total_counts["back"] = 0
+        total_counts["unknown"] = 0
 
     batch_detect_and_process(
         img_paths=all_images,
@@ -461,6 +446,7 @@ def main() -> None:
         num_threads=thread_count,
         show_progress=True,
         classes=classes_of_interest,
+        min_points=args.min_points,
     )
 
     print("\n" + "=" * 30)

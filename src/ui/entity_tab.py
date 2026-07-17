@@ -5,7 +5,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
 
-from detection.yolo import CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING
 from db.models import Entity, Instance, Image
 from filters import Filters
 from filters.entity import (

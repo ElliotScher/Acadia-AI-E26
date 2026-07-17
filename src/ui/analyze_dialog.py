@@ -1,17 +1,20 @@
+from setuptools.config.setupcfg import Target
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+import logging
 import math
 from pathlib import Path
 import functools
 
 from db.models import Image, Instance, Entity
-from detection.yolo import (
+from detection.classes import (
     CLASS_ID_MAPPING,
-    TARGET_CLASSES,
-    process_single_image,
-    load_model,
-    Detection,
+    TARGET_CLASSES
+)
+from detection.image_yolo import (
+    process_images,
+    DetectionResult,
 )
 import utility.parallel as upl
 
@@ -21,7 +24,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         super().__init__(*args, **kwargs)
 
         self.threadsRunning = 0
-        self.results: list[dict[int, list[Detection]]] = list()
+        self.results: list[DetectionResult] = list()
 
         self.session = session
         self.images: list[tuple[int, str]] = list(map(lambda i: (i.id, i.path), images))
@@ -93,7 +96,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         imagesPerThread = math.ceil(len(self.images) / threadCount)
 
         self.threadsRunning = 0
-        self.results: list[dict[int, list[Detection]]] = list()
+        self.results: list[dict[int, list[DetectionResult]]] = list()
 
         for i in range(threadCount):
             images = self.images[(i * imagesPerThread) : ((i + 1) * imagesPerThread)]
@@ -117,53 +120,50 @@ class AnalyzeDialog(QtWidgets.QDialog):
         images: list[tuple[int, str]],
         minConfidence: float,
         targetClasses: list[int],
-    ) -> dict[int, list[Detection]]:
-        results: dict[int, list[Detection]] = dict()
-        for image in images:
-            results[image[0]] = process_single_image(
-                load_model("yolo26s.pt"),
-                Path(image[1]).resolve(),
-                Path(),
-                Path(),
-                False,
-                minConfidence,
-                targetClasses,
-            )
-            upl.Async.progress(len(results) / len(images))
-
+    ) -> list[DetectionResult]:
+        results = process_images(
+            [Path(x[1]) for x in images],
+            "yolo26s.pt",
+            None,
+            None,
+            minConfidence,
+            targetClasses,
+        )
         return results
 
     @QtCore.Slot()
-    def finishAnalysis(self, result: dict[int, list[Detection]]):
-        self.results.append(result)
+    def finishAnalysis(self, result: list[DetectionResult]):
+        self.results.extend(result)
         self.threadsRunning -= 1
+        if self.threadsRunning > 1:
+            return
+        for r in self.results:
+            image = self.session.scalar(select(Image).where(Image.path == r.image_path.as_posix()))
+            if not image:
+                logger = logging.Logger("analyze_dialog")
+                logger.log(logging.WARN, f"couldn't find image {r.image_path} in the database")
+                return
+            if image.analyzed:
+                for instance in image.get_instances(self.session):
+                    self.session.delete(instance)
+            for detection in r.boxes:
+                entity = Entity()
+                box = detection[0]
+                typeId = detection[1]
+                conf = detection[2]
+                instance = Instance(
+                    image=image,
+                    entity=entity,
+                    x=box.x,
+                    y=box.y,
+                    width=box.w,
+                    height=box.h,
+                    type_id=typeId,
+                    confidence=conf,
+                )
+                self.session.add_all((entity, instance))
 
-        if self.threadsRunning == 0:
-            for result in self.results:
-                for imageId in result.keys():
-                    image: Image = self.session.scalar(
-                        select(Image).where(Image.id == imageId)
-                    )  # ty:ignore[invalid-assignment]
+            image.analyzed = True
+            self.session.add(image)
 
-                    if image.analyzed:
-                        for instance in image.get_instances(self.session):
-                            self.session.delete(instance)
-
-                    for detection in result[imageId]:
-                        entity = Entity()
-                        instance = Instance(
-                            image=image,
-                            entity=entity,
-                            x=detection.box[0],
-                            y=detection.box[1],
-                            width=detection.box[2] - detection.box[0],
-                            height=detection.box[3] - detection.box[1],
-                            type_id=detection.cls_id,
-                            confidence=detection.conf,
-                        )
-                        self.session.add_all((entity, instance))
-
-                    image.analyzed = True
-                    self.session.add(image)
-
-            self.session.commit()
+        self.session.commit()

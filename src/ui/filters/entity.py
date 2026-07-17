@@ -2,7 +2,7 @@ from PySide6 import QtCore, QtWidgets
 from sqlalchemy import Select, and_, func, select
 
 from db.models import Entity, Instance, Image
-from detection.yolo import CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING
 from filters import DateFilter, Filter, TimeFilter
 
 
