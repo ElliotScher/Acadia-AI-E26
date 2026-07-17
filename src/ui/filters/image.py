@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
-from sqlalchemy import Select, and_, func
+from sqlalchemy import Select, and_, func, distinct
 from db.models import Image, Instance, Entity
 from db.models import Image, Instance, Entity
 from detection.classes import CLASS_ID_MAPPING
@@ -226,13 +226,12 @@ class ClusterCountFilter(Filter):
     @QtCore.Slot()
     def makeFilter(self, query: Select):
         return (
-            query.join(Instance)
-            .join(Entity)
-            .group_by(Instance.image_id)
+            query.join(Instance, Instance.image_id == Image.id)
+            .join(Entity, Entity.id == Instance.entity_id)
+            .group_by(Image.id)
             .having(
                 and_(
-                    func.count(Entity.cluster) >= self.minFilter.value(),
-                    func.count(Entity.cluster) <= self.maxFilter.value(),
+                    func.count(distinct(Entity.cluster)).between(self.minFilter.value(), self.maxFilter.value())
                 )
             )
         )
