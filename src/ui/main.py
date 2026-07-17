@@ -1,16 +1,20 @@
 #!/usr/bin/env python
+
 import os
+import platform
+import subprocess
 import sys
-from pathlib import Path
-import image_tab as it
+
+from entity_tab import EntitiesTab
+from export_dialog import ExportDialog, ExportOptions
+from image_tab import ImageTab
 from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 import utility.parallel as upl
 from db import get_db
-from db.models import Image
+from db.models import Entity, Image
 
 
 class Root(QtWidgets.QMainWindow):
@@ -25,13 +29,16 @@ class Root(QtWidgets.QMainWindow):
         self.setCentralWidget(self.widget)
         layout = QtWidgets.QVBoxLayout(self.widget)
 
-        self.imageTab = it.ImageTab()
+        self.imageTab = ImageTab()
         self.entitiesTab = EntitiesTab()
+        self.imageTab.entityOpened.connect(self.openEntity)
+        self.entitiesTab.imageOpened.connect(self.openImage)
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self.imageTab, "Images")
         self.tabs.addTab(self.entitiesTab, "Entities")
         layout.addWidget(self.tabs)
+        self.tabs.currentChanged.connect(self.tabChanged)
 
         self.buildMenu()
 
@@ -79,34 +86,26 @@ class Root(QtWidgets.QMainWindow):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        # self.imageTab.setsession(self.session)
 
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
         thread = upl.Async("File Open", lambda: self._fileOpen(path))
         thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.finished.connect(lambda: self.entitiesTab.setsession(self.session))
         thread.start()
 
     @QtCore.Slot()
     def fileExportFiltered(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(True, path[0])
+        dialog = ExportDialog(True)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def fileExportAll(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(False, path[0])
+        dialog = ExportDialog(False)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def analyzeFiltered(self):
@@ -119,6 +118,12 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.analyze(False)
 
     @QtCore.Slot()
+    def tabChanged(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.refreshGallery()
+        else:
+            self.entitiesTab.refreshGallery()
+
     def analyzePoseDirection(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzePoseDirection(True)
@@ -128,15 +133,62 @@ class Root(QtWidgets.QMainWindow):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzePoseDirection(False)
 
+    def warnDialog(self, msg: str):
+        d = QtWidgets.QMessageBox()
+        d.setWindowTitle("Warning!")
+        d.setText(msg)
+        d.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        d.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+        d.exec()
 
-class EntitiesTab(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
+    @QtCore.Slot()
+    def openImage(self, image: Image):
+        r = self.imageTab.focusImage(image)
+        if not r:
+            self.warnDialog("Image is not within the current image filters.")
+            return
+        if self.tabs.currentWidget() == self.entitiesTab:
+            self.tabs.setCurrentWidget(self.imageTab)
 
-        self.text = QtWidgets.QLabel("Entities tab")
+    @QtCore.Slot()
+    def openEntity(self, entity: Entity):
+        r = self.entitiesTab.focusEntity(entity)
+        if not r:
+            self.warnDialog("Image is not within the current entity filters.")
+            return
+        if self.tabs.currentWidget() == self.imageTab:
+            self.tabs.setCurrentWidget(self.entitiesTab)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.text)
+    @QtCore.Slot()
+    def doExport(self, options: ExportOptions):
+        if not hasattr(self, "session"):
+            return
+
+        if options.mode == "images":
+            Image.export_to_csv(
+                self.session, self.imageTab.getImages(options.filtered), options.path
+            )
+        elif options.mode == "interval":
+            Image.export_to_csv(
+                self.session,
+                self.imageTab.getImages(options.filtered),
+                options.path,
+                options.interval,
+            )
+        else:
+            Entity.export_to_csv(
+                self.session,
+                self.entitiesTab.getEntities(options.filtered),
+                options.path,
+            )
+
+        if open:
+            if platform.system() == "Darwin":
+                subprocess.call(("open", options.path))
+            elif platform.system() == "Windows":
+                subprocess.call(("start", options.path), shell=True)
+            else:
+                subprocess.call(("xdg-open", options.path))
 
 
 if __name__ == "__main__":

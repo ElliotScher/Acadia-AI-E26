@@ -1,5 +1,6 @@
 import typing
 
+from analyze_dialog import AnalyzeDialog
 from filters import Filters
 from filters.image import (
     AnalyzedFilter,
@@ -9,16 +10,13 @@ from filters.image import (
     NoEntityFilter,
     NotAnalyzedFilter,
 )
-
-from analyze_dialog import AnalyzeDialog
 from pose_direction_dialog import PoseDirectionDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from db.models import Image, Instance
+from db.models import Entity, Image, Instance
 from detection.classes import CLASS_ID_MAPPING
-from detection.image_yolo import load_model
 
 colors = (
     "#00ff00",
@@ -58,8 +56,8 @@ class GalleryModel(QtCore.QAbstractListModel):
     ) -> Image | None:
         return self.getById(self.results[index.row()])
 
-    def getById(self, id: int) -> Image | None:
-        return self.session.scalar(select(Image).where(Image.id == id))
+    def getById(self, id: int) -> Image:
+        return self.session.scalar(select(Image).where(Image.id == id))  # type: ignore
 
     def data(
         self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex, role: int = 0
@@ -92,12 +90,11 @@ class GalleryModel(QtCore.QAbstractListModel):
             QtCore.QModelIndex | QtCore.QPersistentModelIndex
         ) = QtCore.QModelIndex(),
     ):
-        newmax = min(
-            self.size + 300,
-            len(self.results),
-        )
-        self.beginInsertRows(QtCore.QModelIndex(), self.size, newmax - 1)
-        self.size = newmax
+        tofetch = min(300, len(self.results) - self.size)
+        if tofetch < 1:
+            return
+        self.beginInsertRows(QtCore.QModelIndex(), self.size, self.size + tofetch - 1)
+        self.size += tofetch
         self.endInsertRows()
 
     def canFetchMore(
@@ -108,6 +105,7 @@ class GalleryModel(QtCore.QAbstractListModel):
 
 class ImageTab(QtWidgets.QWidget):
     session: Session
+    entityOpened = QtCore.Signal(Entity)
 
     def __init__(self):
         super().__init__()
@@ -135,6 +133,7 @@ class ImageTab(QtWidgets.QWidget):
 
         layout.addWidget(gallerySide)
         self.imageInfo = ImageInfo()
+        self.imageInfo.entityOpened.connect(self.entityOpened.emit)
         layout.addWidget(self.imageInfo)
 
     @QtCore.Slot()
@@ -143,7 +142,7 @@ class ImageTab(QtWidgets.QWidget):
         image: Image | None = None
         if len(selection) > 0:
             image = self.galleryModel.getByIndex(selection[0])
-        self.imageInfo.showinfo(image, self.session)
+        self.imageInfo.showImage(image, self.session)
 
     @QtCore.Slot()
     def setsession(self, session: Session):
@@ -173,22 +172,45 @@ class ImageTab(QtWidgets.QWidget):
         )
         self.count.setText(str(len(self.galleryModel.results)) + " images")
 
+    def getImages(self, filtered: bool) -> list[Image]:
+        if not hasattr(self, "session"):
+            return []
+
+        if filtered:
+            return list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            return list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
     @QtCore.Slot()
     def analyze(self, filtered: bool):
         if not hasattr(self, "session"):
             return
 
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
+        images = self.getImages(filtered)
 
         dialog = AnalyzeDialog(self.session, images)
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
+
+    @QtCore.Slot(Image, result=bool)
+    def focusImage(self, image: Image) -> bool:
+        if image.id not in self.galleryModel.results:
+            return False
+        i = self.galleryModel.results.index(image.id)
+        # this is scary, and should ideally be removed
+        while i >= self.galleryModel.rowCount():
+            if not self.galleryModel.canFetchMore(QtCore.QModelIndex()):
+                return False
+            self.galleryModel.fetchMore(QtCore.QModelIndex())
+        index = self.galleryModel.index(i, 0)
+        self.gallery.scrollTo(index)
+        self.gallery.selectionModel().select(
+            QtCore.QItemSelection(index, index),
+            QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
+        )
+        return True
 
     @QtCore.Slot()
     def analyzePoseDirection(self, filtered: bool):
@@ -236,6 +258,8 @@ class ImageGallery(QtWidgets.QListView):
 
 
 class ImageInfo(QtWidgets.QGroupBox):
+    entityOpened = QtCore.Signal(Entity)
+
     def __init__(self):
         super().__init__()
         self.setTitle("Image Info")
@@ -256,53 +280,66 @@ class ImageInfo(QtWidgets.QGroupBox):
         layout.addWidget(self.info)
         self.info.hide()
 
-    def showinfo(self, image: Image | None, session: Session):
+    def showImage(self, image: Image | None, session: Session):
         if image:
-            self.showImg(image, session)
-            self.viewer.show()
+            self.showInfo(image, session)
         else:
             self.info.hide()
             self.viewer.hide()
             self.placeholder.show()
 
-    def showImg(self, image: Image, session: Session):
+    def showInfo(self, image: Image, session: Session):
         instances = image.get_instances(session)
-        instancesText = ""
+        self.entities.clear()
+
+        def makeEntityButton(
+            entity: Entity,
+        ):  # this has to be a function to capture the entity in the lambda
+            button = QtWidgets.QPushButton()
+            button.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ViewFullscreen))
+            button.setIconSize(QtCore.QSize(15, 15))
+            button.setFixedSize(QtCore.QSize(25, 25))
+            button.clicked.connect(lambda: self.entityOpened.emit(entity))
+            return button
+
         for i in range(len(instances)):
             instance = instances[i]
-            directions = []
-            if instance.direction_fb == 1:
-                directions.append("front")
-            elif instance.direction_fb == -1:
-                directions.append("back")
-            if instance.direction_lr == 1:
-                directions.append("right")
-            elif instance.direction_lr == -1:
-                directions.append("left")
-            instancesText += (
-                '<font color="'
-                + colors[i % len(colors)]
-                + '">'
-                + CLASS_ID_MAPPING[instance.type_id].title()
-                + (" (" + ", ".join(directions) + ")" if len(directions) else "")
-                + " "
-                + str(round(instance.confidence * 10000) / 100)
-                + "% confidence</font><br>"
+            widget = QtWidgets.QWidget(self.entities)
+            widget.setFixedHeight(40)
+            layout = QtWidgets.QHBoxLayout(widget)
+            tlabel = QtWidgets.QLabel(
+                f"<font color={colors[i % len(colors)]}>{CLASS_ID_MAPPING[instance.type_id]}</font>",
+                widget,
             )
-
+            layout.addWidget(tlabel)
+            c = instance.confidence
+            color = (
+                f"#{int(30 * c + 255 * (1 - c)):02x}{int(255 * c + 30 * (1 - c)):02x}1e"
+            )
+            clabel = QtWidgets.QLabel(f"<font color={color}>{c:0.2%}</font> ", widget)
+            layout.addWidget(clabel)
+            button = makeEntityButton(instance.entity)
+            layout.addWidget(button)
+            item = QtWidgets.QListWidgetItem()
+            item.setSizeHint(QtCore.QSize(200, 40))
+            self.entities.addItem(item)
+            self.entities.setItemWidget(item, widget)
         self.viewer.set(image, instances)
         self.imgdate.setText(image.datetime.strftime("%Y-%m-%d %H:%M:%S"))
-        self.imginstances.setText(instancesText)
         self.info.show()
+        self.viewer.show()
         self.placeholder.hide()
 
     def buildinfo(self) -> QtWidgets.QWidget:
-        widget = QtWidgets.QWidget()
+        widget = QtWidgets.QWidget(self)
         layout = QtWidgets.QVBoxLayout(widget)
-        self.imgdate = QtWidgets.QLabel("A long time ago...")
+        self.imgdate = QtWidgets.QLabel("A long time ago...", widget)
         layout.addWidget(self.imgdate)
-        self.imginstances = QtWidgets.QLabel()
-        layout.addWidget(self.imginstances)
+        self.entities = QtWidgets.QListWidget(widget)
+        layout.addWidget(self.entities)
+        self.entities.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.NoSelection
+        )
         return widget
 
 
@@ -315,35 +352,25 @@ class ImageViewer(QtWidgets.QGraphicsView):
 
     def set(self, image: Image, instances: list[Instance]):
         self.thisScene.clear()
-
         pixmap = QtGui.QPixmap(image.path)
-        self.resize(pixmap.width(), pixmap.height())
-        self.pixmapItem = self.thisScene.addPixmap(QtGui.QPixmap())
-        self.pixmapItem.setPixmap(pixmap)
-        self.fitInView(self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
-
+        pixmapItem = self.thisScene.addPixmap(pixmap)
+        pen = QtGui.QPen()
+        pen.setWidth(int((pixmap.width() + pixmap.height()) / 500))
         for i in range(len(instances)):
+            pen.setColor(colors[i % len(colors)])
             instance = instances[i]
             self.thisScene.addRect(
                 instance.x,
                 instance.y,
                 instance.width,
                 instance.height,
-                self.getpen(colors[i % len(colors)]),
+                pen,
             )
+        self.fitInView(pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.pixmapItem:
-            try:
-                self.fitInView(
-                    self.pixmapItem, QtCore.Qt.AspectRatioMode.KeepAspectRatio
-                )
-            except:
-                pass
-
-    @staticmethod
-    def getpen(color: str) -> QtGui.QPen:
-        pen = QtGui.QPen(color)
-        pen.setWidth(10)
-        return pen
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
+            factor = 1 + event.angleDelta().y() / 1000
+            self.scale(factor, factor)
+        else:
+            super().wheelEvent(event)

@@ -16,9 +16,7 @@ class AnalyzedFilter(Filter):
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
-        return query.where(
-            Image.analyzed == True
-        )  # this needs to be this way, it cannot be just Image.analyzed
+        return query.where(Image.analyzed == True)  # noqa
 
 
 class NotAnalyzedFilter(Filter):
@@ -31,9 +29,7 @@ class NotAnalyzedFilter(Filter):
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
-        return query.where(
-            Image.analyzed == False
-        )  # this needs to be this way, it cannot be just (not Image.analyzed)
+        return query.where(Image.analyzed == False)  # noqa
 
 
 class ImageTimeFilter(TimeFilter):
