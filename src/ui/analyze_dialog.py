@@ -138,7 +138,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         if self.threadsRunning > 1:
             return
         for r in self.results:
-            image = self.session.scalar(select(Image).where(Image.path == r.image_path))
+            image = self.session.scalar(select(Image).where(Image.path == r.image_path.as_posix()))
             if not image:
                 logger = logging.Logger("analyze_dialog")
                 logger.log(logging.WARN, f"couldn't find image {r.image_path} in the database")

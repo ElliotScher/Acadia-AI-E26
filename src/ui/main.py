@@ -4,14 +4,16 @@ import os
 import platform
 import subprocess
 import sys
+import subprocess
+import platform
 
+from image_tab import ImageTab
 from entity_tab import EntitiesTab
 from export_dialog import ExportDialog, ExportOptions
-from image_tab import ImageTab
+from cluster_dialog import ClusterDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
-
 import utility.parallel as upl
 from db import get_db
 from db.models import Entity, Image
@@ -71,6 +73,13 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeAll = QtGui.QAction("Analyze All", self)
         aAnalyzeAll.triggered.connect(self.analyzeAll)
         mAnalyze.addAction(aAnalyzeAll)
+        aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
+        aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
+        mAnalyze.addAction(aAnalyzeClustersFiltered)
+        aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
+        aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
+        mAnalyze.addAction(aAnalyzeClustersAll)
+
         aAnalyzePoseDirection = QtGui.QAction(
             "Analyze Filtered For Direction From Poses", self
         )
@@ -118,6 +127,25 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.analyze(False)
 
     @QtCore.Slot()
+    def analyzeClustersFiltered(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.doAnalyzeClusters(self.imageTab.getImages(True))
+        else:
+            self.doAnalyzeClusters(self.entitiesTab.getEntities(True))
+
+    @QtCore.Slot()
+    def analyzeClustersAll(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.doAnalyzeClusters(self.imageTab.getImages(False))
+        else:
+            self.doAnalyzeClusters(self.entitiesTab.getEntities(False))
+
+    def tabChanged(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.refreshGallery()
+        else:
+            self.entitiesTab.refreshGallery()
+    
     def tabChanged(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.refreshGallery()
@@ -175,6 +203,12 @@ class Root(QtWidgets.QMainWindow):
                 options.path,
                 options.interval,
             )
+        elif options.mode == "clusters":
+            Entity.export_clusters_to_csv(
+                self.session,
+                self.entitiesTab.getEntities(options.filtered),
+                options.path,
+            )
         else:
             Entity.export_to_csv(
                 self.session,
@@ -189,6 +223,25 @@ class Root(QtWidgets.QMainWindow):
                 subprocess.call(("start", options.path), shell=True)
             else:
                 subprocess.call(("xdg-open", options.path))
+
+    @QtCore.Slot()
+    def doAnalyzeClusters(self, images: list[Image] | list[Entity]):
+        if not hasattr(self, "session"):
+            return
+
+        if len(images) > 0 and isinstance(images[0], Entity):
+            actualImages: list[Image] = []
+            entity: Entity
+            for entity in images:  # type: ignore
+                for instance in entity.get_instances(self.session):
+                    if instance.image not in actualImages:
+                        actualImages.append(instance.image)
+        else:
+            actualImages: list[Image] = images  # type: ignore
+
+        dialog = ClusterDialog(self.session, actualImages)
+        dialog.accepted.connect(self.tabChanged)
+        dialog.exec()
 
 
 if __name__ == "__main__":

@@ -5,7 +5,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 @dataclass
 class ExportOptions:
-    mode: Literal["images"] | Literal["interval"] | Literal["entities"]
+    mode: (
+        Literal["images"]
+        | Literal["interval"]
+        | Literal["clusters"]
+        | Literal["entities"]
+    )
     path: str
     filtered: bool
     interval: int
@@ -29,6 +34,8 @@ class ExportDialog(QtWidgets.QDialog):
         layout.addWidget(self.exportModeImages)
         self.exportModeEntities = QtWidgets.QRadioButton("Row per Entity")
         layout.addWidget(self.exportModeEntities)
+        self.exportModeClusters = QtWidgets.QRadioButton("Row per Cluster")
+        layout.addWidget(self.exportModeClusters)
         self.exportModeInterval = QtWidgets.QRadioButton("Row per Time Interval")
         self.exportModeInterval.toggled.connect(self.enableIntervalTime)
         layout.addWidget(self.exportModeInterval)
@@ -67,7 +74,11 @@ class ExportDialog(QtWidgets.QDialog):
         mode = (
             "images"
             if self.exportModeImages.isChecked()
-            else ("interval" if self.exportModeInterval.isChecked() else "entities")
+            else (
+                "interval"
+                if self.exportModeInterval.isChecked()
+                else ("clusters" if self.exportModeClusters.isChecked() else "entities")
+            )
         )
 
         path = QtWidgets.QFileDialog.getSaveFileName(
