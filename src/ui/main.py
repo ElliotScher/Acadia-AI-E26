@@ -1,17 +1,21 @@
 #!/usr/bin/env python
 
 import os
+import platform
+import subprocess
 import sys
 
-import image_tab as it
+from cluster_dialog import ClusterDialog
+from entity_tab import EntitiesTab
+from export_dialog import ExportDialog, ExportOptions
+from image_tab import ImageTab
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from detection.bike_rider_merging import merge_bikes_riders
 import utility.parallel as upl
 from db import get_db
-from db.models import Image
+from db.models import Entity, Image
 
 
 class Root(QtWidgets.QMainWindow):
@@ -26,13 +30,16 @@ class Root(QtWidgets.QMainWindow):
         self.setCentralWidget(self.widget)
         layout = QtWidgets.QVBoxLayout(self.widget)
 
-        self.imageTab = it.ImageTab()
+        self.imageTab = ImageTab()
         self.entitiesTab = EntitiesTab()
+        self.imageTab.entityOpened.connect(self.openEntity)
+        self.entitiesTab.imageOpened.connect(self.openImage)
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self.imageTab, "Images")
         self.tabs.addTab(self.entitiesTab, "Entities")
         layout.addWidget(self.tabs)
+        self.tabs.currentChanged.connect(self.tabChanged)
 
         self.buildMenu()
 
@@ -65,6 +72,7 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeAll = QtGui.QAction("Analyze All", self)
         aAnalyzeAll.triggered.connect(self.analyzeAll)
         mAnalyze.addAction(aAnalyzeAll)
+
         aMergeBikesFiltered = QtGui.QAction("Merge Filtered Bikes and Riders", self)
         aMergeBikesFiltered.triggered.connect(self.analyzeMergeBikesFiltered)
         mAnalyze.addAction(aMergeBikesFiltered)
@@ -72,38 +80,49 @@ class Root(QtWidgets.QMainWindow):
         aMergeBikesAll.triggered.connect(self.analyzeMergeBikesAll)
         mAnalyze.addAction(aMergeBikesAll)
 
+        aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
+        aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
+        mAnalyze.addAction(aAnalyzeClustersFiltered)
+        aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
+        aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
+        mAnalyze.addAction(aAnalyzeClustersAll)
+
+        aAnalyzePoseDirection = QtGui.QAction(
+            "Analyze Filtered For Direction From Poses", self
+        )
+        aAnalyzePoseDirection.triggered.connect(self.analyzePoseDirection)
+        mAnalyze.addAction(aAnalyzePoseDirection)
+        aAnalyzeAllPoseDirection = QtGui.QAction(
+            "Analyze All For Direction From Poses", self
+        )
+        aAnalyzeAllPoseDirection.triggered.connect(self.analyzeAllPoseDirection)
+        mAnalyze.addAction(aAnalyzeAllPoseDirection)
+
+
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
         Image.import_from_dir(self.session, path)
-        # self.imageTab.setsession(self.session)
 
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
         thread = upl.Async("File Open", lambda: self._fileOpen(path))
         thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.finished.connect(lambda: self.entitiesTab.setsession(self.session))
         thread.start()
 
     @QtCore.Slot()
     def fileExportFiltered(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(True, path[0])
+        dialog = ExportDialog(True)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def fileExportAll(self):
-        isImages = self.tabs.currentWidget() == self.imageTab
-        path = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save export...", "images.csv" if isImages else "entities.csv"
-        )
-        if len(path[0]) > 0 and hasattr(self, "session"):
-            if isImages:
-                self.imageTab.export(False, path[0])
+        dialog = ExportDialog(False)
+        dialog.startExport.connect(self.doExport)
+        dialog.exec()
 
     @QtCore.Slot()
     def analyzeFiltered(self):
@@ -116,6 +135,7 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.analyze(False)
 
     @QtCore.Slot()
+
     def analyzeMergeBikesFiltered(self):
         self.imageTab.mergeBikes(True)
 
@@ -123,15 +143,115 @@ class Root(QtWidgets.QMainWindow):
     def analyzeMergeBikesAll(self):
         self.imageTab.mergeBikes(False)
 
+    def analyzeClustersFiltered(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.doAnalyzeClusters(self.imageTab.getImages(True))
+        else:
+            self.doAnalyzeClusters(self.entitiesTab.getEntities(True))
 
-class EntitiesTab(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
+    @QtCore.Slot()
+    def analyzeClustersAll(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.doAnalyzeClusters(self.imageTab.getImages(False))
+        else:
+            self.doAnalyzeClusters(self.entitiesTab.getEntities(False))
 
-        self.text = QtWidgets.QLabel("Entities tab")
+    def tabChanged(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.refreshGallery()
+        else:
+            self.entitiesTab.refreshGallery()
+    
+    def analyzePoseDirection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzePoseDirection(True)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self.text)
+    @QtCore.Slot()
+    def analyzeAllPoseDirection(self):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.analyzePoseDirection(False)
+
+    def warnDialog(self, msg: str):
+        d = QtWidgets.QMessageBox()
+        d.setWindowTitle("Warning!")
+        d.setText(msg)
+        d.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        d.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+        d.exec()
+
+    @QtCore.Slot()
+    def openImage(self, image: Image):
+        r = self.imageTab.focusImage(image)
+        if not r:
+            self.warnDialog("Image is not within the current image filters.")
+            return
+        if self.tabs.currentWidget() == self.entitiesTab:
+            self.tabs.setCurrentWidget(self.imageTab)
+
+    @QtCore.Slot()
+    def openEntity(self, entity: Entity):
+        r = self.entitiesTab.focusEntity(entity)
+        if not r:
+            self.warnDialog("Image is not within the current entity filters.")
+            return
+        if self.tabs.currentWidget() == self.imageTab:
+            self.tabs.setCurrentWidget(self.entitiesTab)
+
+    @QtCore.Slot()
+    def doExport(self, options: ExportOptions):
+        if not hasattr(self, "session"):
+            return
+
+        if options.mode == "images":
+            Image.export_to_csv(
+                self.session, self.imageTab.getImages(options.filtered), options.path
+            )
+        elif options.mode == "interval":
+            Image.export_to_csv(
+                self.session,
+                self.imageTab.getImages(options.filtered),
+                options.path,
+                options.interval,
+            )
+        elif options.mode == "clusters":
+            Entity.export_clusters_to_csv(
+                self.session,
+                self.entitiesTab.getEntities(options.filtered),
+                options.path,
+            )
+        else:
+            Entity.export_to_csv(
+                self.session,
+                self.entitiesTab.getEntities(options.filtered),
+                options.path,
+            )
+
+        if open:
+            if platform.system() == "Darwin":
+                subprocess.call(("open", options.path))
+            elif platform.system() == "Windows":
+                subprocess.call(("start", options.path), shell=True)
+            else:
+                subprocess.call(("xdg-open", options.path))
+
+    @QtCore.Slot()
+    def doAnalyzeClusters(self, images: list[Image] | list[Entity]):
+        if not hasattr(self, "session"):
+            return
+
+        if len(images) > 0 and isinstance(images[0], Entity):
+            actualImages: list[Image] = []
+            entity: Entity
+            for entity in images:  # type: ignore
+                for instance in entity.get_instances(self.session):
+                    if instance.image not in actualImages:
+                        actualImages.append(instance.image)
+        else:
+            actualImages: list[Image] = images  # type: ignore
+
+        dialog = ClusterDialog(self.session, actualImages)
+        dialog.accepted.connect(self.tabChanged)
+        dialog.exec()
 
 
 if __name__ == "__main__":

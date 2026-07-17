@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from pathlib import Path
+
 from sqlalchemy import (
     String,
     DateTime,
@@ -21,12 +24,15 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+from pathlib import Path
 import datetime as dt
 import os
 import csv
 
-from detection.yolo import process_single_image, CLASS_ID_MAPPING
-
+from detection.classes import CLASS_ID_MAPPING
+from detection.image_yolo import DetectionResult
+from detection.pose_direction import process_single_image
+from utility.geometryutils import Rectangle
 
 class Base(DeclarativeBase):
     pass
@@ -64,6 +70,17 @@ class Image(Base):
             session.scalars(
                 select(Entity).join(Instance).where(Instance.image_id == self.id)
             ).all()
+        )
+
+    def to_detection_result(self, session: Session) -> DetectionResult:
+        return DetectionResult(
+            Path(self.path).resolve(),
+            None,
+            list(map(lambda i: (
+                Rectangle(i.x, i.y, i.width, i.height),
+                i.entity_id,
+                i.confidence
+            ), self.get_instances(session)))
         )
 
     @staticmethod
@@ -107,34 +124,67 @@ class Image(Base):
             return None
 
     @staticmethod
-    def export_to_csv(session: Session, images: list[Image], path: str):
+    def export_to_csv(
+        session: Session, images: list[Image], path: str, interval: int = 0
+    ):
         with open(path, mode="w", newline="") as file:
             writer = csv.writer(file)
 
             header = ["date", "time"]
+            presentTypes = Instance.get_present_types(session)
             entityCounts: dict[int, int] = dict()
-            for present_type in Instance.get_present_types(session):
-                header.append(CLASS_ID_MAPPING[present_type] + " count")
-                entityCounts[present_type] = 0
+            clusterCount = 0
+            for presentType in presentTypes:
+                header.append(CLASS_ID_MAPPING[presentType] + " count")
+                entityCounts[presentType] = 0
+            header.append("cluster count")
+
+            lastRangeTime: dt.datetime | None = None
+            row: None | list[str | int] = None
 
             writer.writerows([header])
             data = []
 
             for image in images:
-                row = [
-                    image.datetime.strftime("%Y-%m-%d"),
-                    image.datetime.strftime("%H:%M:%S"),
-                ]
+                rowTime: dt.datetime = image.datetime
+                if interval != 0:
+                    rowTime = rowTime - dt.timedelta(
+                        minutes=rowTime.minute % interval,
+                        seconds=rowTime.second,
+                        microseconds=rowTime.microsecond,
+                    )
+
+                if lastRangeTime != rowTime:
+                    if row is not None:
+                        for entity in entityCounts.keys():
+                            row.append(entityCounts[entity])
+                            entityCounts[entity] = 0
+                        row.append(clusterCount)
+                        clusterCount = 0
+                        data.append(row)
+
+                        if len(data) > 100:
+                            writer.writerows(data)
+                            data = []
+
+                    lastRangeTime = rowTime
+                    row = [
+                        rowTime.strftime("%Y-%m-%d"),
+                        rowTime.strftime("%H:%M:%S"),
+                    ]
+
+                clusters = []
                 for instance in image.get_instances(session):
                     entityCounts[instance.type_id] += 1
+                    if instance.entity.cluster not in clusters:
+                        clusters.append(instance.entity.cluster)
+                clusterCount += len(clusters)
+                
+            if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
-                    entityCounts[entity] = 0
+                row.append(clusterCount)
                 data.append(row)
-
-                if len(data) > 100:
-                    writer.writerows(data)
-                    data = []
 
             if len(data) > 0:
                 writer.writerows(data)
@@ -147,7 +197,6 @@ class Entity(Base):
     __tablename__ = "entity"
     id: Mapped[int] = mapped_column(primary_key=True)
     speed: Mapped[float] = mapped_column(Float(), nullable=True)
-    direction: Mapped[int] = mapped_column(Integer(), nullable=True)
     ebike: Mapped[bool] = mapped_column(Boolean(), nullable=True)
     cluster: Mapped[int] = mapped_column(Integer(), nullable=True)
 
@@ -200,6 +249,111 @@ class Entity(Base):
             session.scalars(select(Entity).where(Entity.cluster == self.cluster)).all()
         )
 
+    @staticmethod
+    def export_to_csv(session: Session, entities: list[Entity], path: str):
+        with open(path, mode="w", newline="") as file:
+            writer = csv.writer(file)
+
+            header = [
+                "start date",
+                "start time",
+                "end date",
+                "end time",
+                "dwell time",
+                "type",
+                "cluster size",
+            ]
+
+            writer.writerows([header])
+            data = []
+
+            for entity in entities:
+                earliestImage = entity.get_earliest_image(session)
+                latestImage = entity.get_latest_image(session)
+                row = [
+                    earliestImage.datetime.strftime("%Y-%m-%d"),
+                    earliestImage.datetime.strftime("%H:%M:%S"),
+                    latestImage.datetime.strftime("%Y-%m-%d"),
+                    latestImage.datetime.strftime("%H:%M:%S"),
+                    (dt.datetime(1970, 1, 1) + entity.get_timedelta(session)).strftime(
+                        "%H:%M:%S"
+                    ),
+                    CLASS_ID_MAPPING[entity.get_type_id(session)],
+                    (
+                        len(entity.get_entities_in_cluster(session))
+                        if entity.cluster
+                        else 0
+                    ),
+                ]
+
+                data.append(row)
+
+                if len(data) > 100:
+                    writer.writerows(data)
+                    data = []
+
+            if len(data) > 0:
+                writer.writerows(data)
+
+    @staticmethod
+    def export_clusters_to_csv(session: Session, entities: list[Entity], path: str):
+        with open(path, mode="w", newline="") as file:
+            writer = csv.writer(file)
+
+            header = [
+                "start date",
+                "start time",
+                "end date",
+                "end time",
+                "dwell time",
+                "cluster size",
+            ]
+
+            writer.writerows([header])
+            data = []
+            clusters: list[int] = []
+
+            for entity in entities:
+                if entity.cluster in clusters:
+                    continue
+
+                clusters.append(entity.cluster)
+
+                entities = entity.get_entities_in_cluster(session)
+                earliestImage = entities[0].get_earliest_image(session)
+                latestImage = entities[0].get_latest_image(session)
+
+                for i in range(1, len(entities)):
+                    entity = entities[i]
+
+                    thisEarliestImage = entity.get_earliest_image(session)
+                    if thisEarliestImage.datetime < earliestImage.datetime:
+                        earliestImage = thisEarliestImage
+                    thisLatestImage = entity.get_latest_image(session)
+                    if thisLatestImage.datetime < latestImage.datetime:
+                        latestImage = thisLatestImage
+
+                row = [
+                    earliestImage.datetime.strftime("%Y-%m-%d"),
+                    earliestImage.datetime.strftime("%H:%M:%S"),
+                    latestImage.datetime.strftime("%Y-%m-%d"),
+                    latestImage.datetime.strftime("%H:%M:%S"),
+                    (
+                        dt.datetime(1970, 1, 1)
+                        + (latestImage.datetime - earliestImage.datetime)
+                    ).strftime("%H:%M:%S"),
+                    len(entities),
+                ]
+
+                data.append(row)
+
+                if len(data) > 100:
+                    writer.writerows(data)
+                    data = []
+
+            if len(data) > 0:
+                writer.writerows(data)
+
     def __repr__(self) -> str:
         return f"Entity({self.id})"
 
@@ -219,6 +373,8 @@ class Instance(Base):
     width: Mapped[int] = mapped_column(Integer(), nullable=False)
     height: Mapped[int] = mapped_column(Integer(), nullable=False)
     confidence: Mapped[float] = mapped_column(Float(), nullable=False)
+    direction_lr: Mapped[int] = mapped_column(Integer(), nullable=True)
+    direction_fb: Mapped[int] = mapped_column(Integer(), nullable=True)
 
     image: Mapped[Image] = relationship(back_populates="instances")
     entity: Mapped[Entity] = relationship(back_populates="instances")
@@ -245,6 +401,33 @@ class Instance(Base):
     @staticmethod
     def get_present_types(session: Session) -> list[int]:
         return list(session.scalars(select(Instance.type_id).distinct()))
+
+    def analyze_pose_direction(self, session: Session, model, conf, minPoints):
+        if self.type_id != 0 and self.type_id != 1:
+            return
+
+        directions = process_single_image(
+            model,
+            Path(self.image.path).resolve(),
+            Path(),
+            Path(),
+            False,
+            conf,
+            [0],
+            (
+                self.x,
+                self.y,
+                self.x + self.width,
+                self.y + self.height,
+            ),
+            minPoints,
+        )
+
+        if len(directions) > 0:
+            self.direction_fb = directions[0].front_back
+            self.direction_lr = directions[0].left_right
+            session.add(self)
+            session.commit()
 
 
 trigger_ddl = DDL("""
@@ -312,3 +495,10 @@ SELECT confidence FROM instance LIMIT 1
 """))
     except:
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN confidence FLOAT"))
+    try:
+        connection.execute(DDL("""
+SELECT direction_lr FROM instance LIMIT 1
+"""))
+    except:
+        connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_lr INTEGER"))
+        connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_fb INTEGER"))
