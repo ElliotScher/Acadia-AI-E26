@@ -29,7 +29,7 @@ import os
 import csv
 
 from detection.classes import CLASS_ID_MAPPING
-from detection.pose_direction import process_single_image
+from detection.direction.pedestrian_direction import process_single_image
 
 class Base(DeclarativeBase):
     pass

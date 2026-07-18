@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 import utility.parallel as upl
 from db.models import Image, Instance
 from detection.image_yolo import load_model
-from detection.pose_direction import Direction, process_single_image
+from detection.direction.pedestrian_direction import Direction, process_single_image
 
 
 class PoseDirectionDialog(QtWidgets.QDialog):

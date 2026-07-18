@@ -148,17 +148,16 @@ def parse_poses(
 
             if lr == 0 and fb == 0:
                 label = "unknown"
-            elif abs(left_average - right_average) > abs(front_average - back_average):
+            elif lr != 0:
                 label = "right" if lr == 1 else "left"
             else:
                 label = "front" if fb == 1 else "back"
 
-            if not box:
-                box = (x1, y1, x2, y2)
+            person_box = box if box else (x1, y1, x2, y2)
 
             results.append(
                 Direction(
-                    box,
+                    person_box,
                     lr,
                     fb,
                     image_path if isinstance(image_path, Path) else Path(image_path),

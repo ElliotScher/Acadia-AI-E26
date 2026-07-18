@@ -21,9 +21,10 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from utility.geometryutils import Rectangle
+from detection.classes import TARGET_CLASSES
 
 # COCO classes: 0=person, 2=car, 5=bus, 7=truck
-DEFAULT_TARGET_CLASSES = [0, 2, 5, 7]
+DEFAULT_TARGET_CLASSES = TARGET_CLASSES
 
 # --classes tokens that request license plate detection instead of a COCO class ID
 PLATE_CLASS_TOKENS = {"plate", "license_plate", "license-plate"}
