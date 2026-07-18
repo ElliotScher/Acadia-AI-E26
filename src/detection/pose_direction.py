@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
-from typing import Union
+from typing import Union, Optional
 
 import cv2
 import torch
@@ -15,6 +15,7 @@ from ultralytics.engine.results import Results
 
 from detection.classes import TARGET_CLASSES
 from detection.image_yolo import load_model
+from utility.parallel import ProgressTracker
 
 left_points = (1, 3, 5, 7, 9, 11, 13, 15)
 right_points = (2, 4, 6, 8, 10, 12, 14, 16)
@@ -228,7 +229,7 @@ def process_image_worker(
     model_name: str,
     save_images: bool,
     conf: float,
-    progress_bar: tqdm | None,
+    progress_bar: Optional[tqdm | ProgressTracker],
     classes: list[int] = TARGET_CLASSES,
     min_points: int = 2,
 ) -> None:

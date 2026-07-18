@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from detection.classes import CLASS_ID_MAPPING
+from utility.parallel import ProgressTracker
 
 import cv2
 import numpy as np
@@ -58,7 +59,7 @@ def load_model(model_name: str) -> YOLO:
 def process_images(
     img_paths: List[Path],
     model_name: str,
-    progress_bar: Optional[tqdm] = None,
+    progress_bar: Optional[tqdm | ProgressTracker] = None,
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
     target_classes: Optional[List[int]] = None,
@@ -70,7 +71,7 @@ def process_images(
     Args:
         img_paths (List[Path]): List of image paths to process.
         model_name (str): YOLO weights name or path.
-        progress_bar (tqdm): Thread-safe progress bar instance.
+        progress_bar (Optional[tqdm | ProgressTracker]): Thread-safe progress bar instance.
         inclusion_region (Optional[Rectangle]): Optional spatial filter region.
         conf_threshold (float): Minimum confidence threshold for detections.
         target_classes (Optional[List[int]]): List of COCO class IDs to filter.
@@ -190,7 +191,7 @@ def save_annotated_images(
 def thread_worker(
     img_paths: List[Path],
     model_name: str,
-    progress_bar: tqdm,
+    progress_bar: Optional[tqdm | ProgressTracker],
     results_list: List[DetectionResult],
     lock: threading.Lock,
     inclusion_region: Optional[Rectangle] = None,
@@ -203,7 +204,7 @@ def thread_worker(
     Args:
         img_paths (List[Path]): Images assigned to this thread.
         model_name (str): YOLO model weights or path.
-        progress_bar (tqdm): Shared progress bar instance.
+        progress_bar (Optional[tqdm | ProgressTracker]): Shared progress bar instance.
         results_list (List[DetectionResult]): Shared results accumulator.
         lock (threading.Lock): Thread lock for safe writes.
         inclusion_region (Optional[Rectangle]): Optional spatial filter.

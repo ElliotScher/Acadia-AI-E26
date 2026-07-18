@@ -23,6 +23,7 @@ from src.utility.imgutils import (
     load_video_start_times,
     validate_video_start_times,
 )
+from utility.parallel import ProgressTracker
 
 # Initialize Logger
 logger = logging.getLogger("video_plateextractor")
@@ -121,7 +122,7 @@ def process_video(
     conf_threshold: float,
     downsample_factor: int,
     manifest: Dict[str, Dict[str, Any]],
-    progress_bar: Optional[tqdm] = None,
+    progress_bar: Optional[tqdm | ProgressTracker] = None,
     start_time: Optional[datetime.datetime] = None,
 ) -> int:
     """
@@ -138,7 +139,7 @@ def process_video(
         manifest (Dict[str, Dict[str, Any]]): Shared manifest dict to record
             each saved crop's timestamp/confidence/source into, keyed by the
             crop's path relative to output_folder.
-        progress_bar (Optional[tqdm]): Progress bar to update per-frame. Defaults to None.
+        progress_bar (Optional[tqdm | ProgressTracker]): Progress bar to update per-frame. Defaults to None.
         start_time (Optional[datetime.datetime]): This video's start-time
             override (the caller picks the right entry out of a
             load_video_start_times list positionally), for footage whose

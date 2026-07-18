@@ -21,6 +21,7 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from utility.geometryutils import Rectangle
+from utility.parallel import ProgressTracker
 
 # COCO classes: 0=person, 2=car, 5=bus, 7=truck
 DEFAULT_TARGET_CLASSES = [0, 2, 5, 7]
@@ -66,7 +67,7 @@ def _frame_worker(
     frame_queue: queue.Queue,
     results_by_video: dict[Path, list[tuple[int, Rectangle, int, float]]],
     results_lock: threading.Lock,
-    progress_bar: tqdm,
+    progress_bar: Optional[tqdm | ProgressTracker],
     inclusion_region: Optional[Rectangle],
     conf_threshold: float,
     classes_list: List[int],
@@ -83,7 +84,7 @@ def _frame_worker(
         frame_queue (queue.Queue): Frame task queue.
         results_by_video (Dict[Path, List[Tuple[int, Rectangle, int, float]]]): Shared results accumulator.
         results_lock (threading.Lock): Thread lock for safe writes.
-        progress_bar (tqdm): Shared progress bar instance.
+        progress_bar (Optional[tqdm | ProgressTracker]): Shared progress bar instance.
         inclusion_region (Optional[Rectangle]): Optional spatial filter.
         conf_threshold (float): Detection confidence threshold.
         classes_list (List[int]): COCO class filter list.
@@ -206,7 +207,7 @@ def _frame_worker(
 def process_videos(
     video_paths: List[Path],
     model_name: str,
-    progress_bar: tqdm,
+    progress_bar: Optional[tqdm | ProgressTracker],
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.5,
     target_classes: Optional[List[int]] = None,
@@ -221,7 +222,7 @@ def process_videos(
     Args:
         video_paths (List[Path]): List of video paths to process.
         model_name (str): YOLO weights name or path.
-        progress_bar (tqdm): Thread-safe progress bar instance.
+        progress_bar (Optional[tqdm | ProgressTracker]): Thread-safe progress bar instance.
         inclusion_region (Optional[Rectangle]): Optional spatial filter region.
         conf_threshold (float): Minimum confidence threshold for detections.
         target_classes (Optional[List[int]]): List of COCO class IDs to filter.
