@@ -193,7 +193,9 @@ class ImageTab(QtWidgets.QWidget):
 
         images = self.getImages(filtered)
 
-        dialog = AnalyzeDialog(self.session, images)
+        dialog = AnalyzeDialog(
+            self.session, list(map(lambda i: (i.id, i.path), images))
+        )
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 

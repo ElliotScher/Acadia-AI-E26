@@ -114,6 +114,7 @@ class PoseDirectionDialog(QtWidgets.QDialog):
         minConfidence: float,
         targetClasses: list[int],
         minPoints: int,
+        _,
     ) -> dict[tuple[int, int], list[Direction]]:
         results: dict[tuple[int, int], list[Direction]] = dict()
         for instance in instances:
