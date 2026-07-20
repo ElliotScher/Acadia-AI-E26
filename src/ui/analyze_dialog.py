@@ -4,6 +4,11 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import functools
+from typing import Callable
+from setuptools.config.setupcfg import Target
+from PySide6 import QtCore, QtGui, QtWidgets
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 import logging
 import math
 import os
@@ -13,6 +18,11 @@ import datetime as dt
 
 from db.models import Image, Instance, Entity, Video
 from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
+from detection.video_yolo import (
+    process_videos,
+    open_video_capture,
+    DetectionResult as VideoDetectionResult,
+)
 from detection.image_yolo import (
     process_images,
     DetectionResult,
@@ -217,10 +227,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 continue
 
             image = self.session.scalar(
-                select(Image).where(
-                    Image.path == os.path.normpath(r.image_path.absolute())
-                )
+                select(Image).where(Image.path == os.path.normpath(r.image_path.absolute()))
             )
+
             if not image:
                 logger = logging.Logger("analyze_dialog")
                 logger.log(
