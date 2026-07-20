@@ -4,6 +4,11 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import functools
+from typing import Callable
+from setuptools.config.setupcfg import Target
+from PySide6 import QtCore, QtGui, QtWidgets
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 import logging
 import math
 import functools
@@ -219,10 +224,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 continue
 
             image = self.session.scalar(
-                select(Image).where(
-                    Image.path == os.path.normpath(r.image_path.absolute())
-                )
+                select(Image).where(Image.path == os.path.normpath(r.image_path.absolute()))
             )
+
             if not image:
                 logger = logging.Logger("analyze_dialog")
                 logger.log(
