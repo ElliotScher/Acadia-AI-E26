@@ -124,7 +124,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         results = process_images(
             [Path(x[1]) for x in images],
             "yolo26s.pt",
-            None,
+            upl.ProgressTracker(len(images)),
             None,
             minConfidence,
             targetClasses,

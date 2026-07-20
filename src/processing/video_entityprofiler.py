@@ -29,6 +29,7 @@ from src.utility.imgutils import (
 )
 from src.utility.loggingutils import setup_logging_and_paths
 from utility import imgutils
+from utility.parallel import ProgressTracker
 
 # Initialize Logger
 logger = logging.getLogger("video_entityprofiler")
@@ -196,7 +197,7 @@ def process_video(
     video_path: Path,
     downsample_factor: int = 1,
     zones: Optional[List[Dict[str, Any]]] = None,
-    progress_bar: Optional[tqdm] = None,
+    progress_bar: Optional[tqdm | ProgressTracker] = None,
     start_time: Optional[datetime.datetime] = None,
 ) -> List[VideoEntityRecord]:
     """
@@ -207,7 +208,7 @@ def process_video(
         video_path (Path): Path to the video file to process.
         downsample_factor (int): Process every Nth frame. Defaults to 1.
         zones (Optional[List[Dict[str, Any]]]): Optional inclusion/exclusion zones list.
-        progress_bar (Optional[tqdm]): Progress bar to update per-frame. Defaults to None.
+        progress_bar (Optional[tqdm | ProgressTracker]): Progress bar to update per-frame. Defaults to None.
         start_time (Optional[datetime.datetime]): This video's start-time
             override (the caller picks the right entry out of a start-times
             list positionally - see main()), for footage whose mtime is

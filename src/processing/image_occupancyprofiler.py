@@ -49,6 +49,7 @@ from src.utility.imgutils import (
     get_hsv_hist,
     get_timestamp,
 )
+from utility.parallel import ProgressTracker
 
 # Initialize Logger
 logger = logging.getLogger("image_occupancyprofiler")
@@ -502,7 +503,7 @@ def select_primary_box(boxes: List[Rectangle]) -> List[Rectangle]:
 
 def process_images_worker(
     img_paths: List[Path],
-    progress_bar: tqdm,
+    progress_bar: Optional[tqdm | ProgressTracker],
     results_dict: Dict[Path, List[Dict[str, Any]]],
     lock: threading.Lock,
     model: nn.Module,
@@ -518,7 +519,7 @@ def process_images_worker(
 
     Args:
         img_paths (List[Path]): List of image file paths allocated to this worker thread.
-        progress_bar (tqdm): Shared tqdm progress bar instance to update after processing each image.
+        progress_bar (Optional[tqdm | ProgressTracker]): Shared progress bar instance to update after processing each image.
         results_dict (Dict[Path, List[Dict[str, Any]]]): Shared dictionary where detections are stored, keyed by image path.
         lock (threading.Lock): Shared lock to synchronize writes to `results_dict`.
         model (nn.Module): Feature extractor model instance shared across threads.
@@ -533,7 +534,8 @@ def process_images_worker(
         try:
             img = cv2.imread(str(img_path))
             if img is None:
-                progress_bar.update(1)
+                if progress_bar:
+                    progress_bar.update(1)
                 continue
 
             boxes = detect_entities(img)
@@ -564,7 +566,8 @@ def process_images_worker(
         except Exception as e:
             logger.error("Error processing image %s: %s", img_path, e)
         finally:
-            progress_bar.update(1)
+            if progress_bar:
+                progress_bar.update(1)
 
 
 def determine_image_direction(img_path: Path) -> Direction:

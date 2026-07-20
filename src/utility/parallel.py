@@ -92,3 +92,12 @@ class ThreadTracker(_T):
         if not cls._instance:
             cls._instance = _T()
         return cls._instance
+
+class ProgressTracker():
+    def __init__(self, total: int):
+        self.done = 0
+        self.total = total
+
+    def update(self, n: int):
+        self.done += n
+        Async.progress(self.done / self.total)
