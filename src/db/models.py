@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import Never
 
 import csv
 import datetime as dt
@@ -27,10 +28,16 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+from pathlib import Path
+import datetime as dt
+import os
+import csv
+from cv2 import CAP_PROP_FPS, CAP_PROP_FRAME_COUNT
 
 from detection.classes import CLASS_ID_MAPPING
 from detection.image_yolo import DetectionResult
 from detection.pose_direction import process_single_image
+from detection.video_yolo import open_video_capture
 from utility.geometryutils import Rectangle
 
 
@@ -191,6 +198,59 @@ class Image(Base):
     def __repr__(self) -> str:
         return f"Image({self.id})"
 
+class Video(Base):
+    __tablename__ = "video"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    path: Mapped[str] = mapped_column(String(), unique=True, nullable=False)
+    datetime: Mapped[dt.datetime] = mapped_column(DateTime(), nullable=False)
+    time: Mapped[dt.time] = mapped_column(Time(), nullable=False)
+    analyzed: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    frames: Mapped[int] = mapped_column(Integer(), nullable=False)
+    fps: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+    def __init__(self, **kwargs):
+        super(Video, self).__init__(**kwargs)
+        if (
+            self.time is None
+        ):  # editor may say code is unreachable, necessary for migrations
+            self.time: Never = dt.time(
+                self.datetime.hour, self.datetime.minute, self.datetime.second
+            )
+    
+    @staticmethod
+    def import_from_dir(session: Session, dir: str):
+        for root, _, files in os.walk(dir):
+            for file in files:
+                if not (
+                    file.lower().endswith(".mp4")
+                    or file.lower().endswith(".avi")
+                    or file.lower().endswith(".mov")
+                    or file.lower().endswith(".mkv")
+                    or file.lower().endswith(".webm")
+                ):
+                    continue
+
+                path = os.path.join(root, file)
+                if session.query(exists().where(Video.path == path)).scalar():
+                    continue
+
+                cap = open_video_capture(path)
+                if not cap.isOpened():
+                    continue
+
+                frames = cap.get(CAP_PROP_FRAME_COUNT)
+                fps = cap.get(CAP_PROP_FPS)
+                cap.release()
+
+                video = Video(
+                    path=path,
+                    datetime=dt.datetime.fromtimestamp(os.path.getmtime(path)),
+                    frames=int(frames),
+                    fps=int(fps)
+                )
+                
+                session.add(video)
+        session.commit()
 
 class Entity(Base):
     __tablename__ = "entity"

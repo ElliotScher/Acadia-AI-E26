@@ -231,7 +231,9 @@ class ClusterCountFilter(Filter):
             .group_by(Image.id)
             .having(
                 and_(
-                    func.count(distinct(Entity.cluster)).between(self.minFilter.value(), self.maxFilter.value())
+                    func.count(distinct(Entity.cluster)).between(
+                        self.minFilter.value(), self.maxFilter.value()
+                    )
                 )
             )
         )

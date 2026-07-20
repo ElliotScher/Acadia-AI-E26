@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 import utility.parallel as upl
 from db import get_db
-from db.models import Entity, Image
+from db.models import Entity, Image, Video
+from ui.analyze_dialog import AnalyzeDialog
 
 
 class Root(QtWidgets.QMainWindow):
@@ -55,9 +56,12 @@ class Root(QtWidgets.QMainWindow):
 
     def buildMenu(self):
         mFile = self.menuBar().addMenu("File")
-        aOpen = QtGui.QAction("Open", self)
+        aOpen = QtGui.QAction("Open Images", self)
         aOpen.triggered.connect(self.fileOpen)
         mFile.addAction(aOpen)
+        aOpenVideos = QtGui.QAction("Open Videos", self)
+        aOpenVideos.triggered.connect(self.fileOpenVideos)
+        mFile.addAction(aOpenVideos)
         aExportFiltered = QtGui.QAction("Export Filtered", self)
         aExportFiltered.triggered.connect(self.fileExportFiltered)
         mFile.addAction(aExportFiltered)
@@ -107,9 +111,25 @@ class Root(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def fileOpen(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
-        thread = upl.Async("File Open", lambda: self._fileOpen(path))
+        thread = upl.Async("File Open", lambda _: self._fileOpen(path))
         thread.finished.connect(lambda: self.imageTab.setsession(self.session))
         thread.finished.connect(lambda: self.entitiesTab.setsession(self.session))
+        thread.start()
+
+    def _fileOpenVideo(self, path: str):
+        self.db = get_db(os.path.join(path, "videos.db"))
+        self.session = Session(self.db)
+        Video.import_from_dir(self.session, path)
+
+    @QtCore.Slot()
+    def fileOpenVideos(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select a folder...")
+        thread = upl.Async("File Open", lambda _: self._fileOpenVideo(path))
+        thread.finished.connect(lambda: self.imageTab.setsession(self.session))
+        thread.finished.connect(lambda: self.entitiesTab.setsession(self.session))
+        thread.finished.connect(
+            lambda: AnalyzeDialog.analyzeVideos(self.session, self.tabChanged)
+        )
         thread.start()
 
     @QtCore.Slot()
@@ -226,7 +246,7 @@ class Root(QtWidgets.QMainWindow):
                 options.path,
             )
 
-        if open:
+        if options.open:
             if platform.system() == "Darwin":
                 subprocess.call(("open", options.path))
             elif platform.system() == "Windows":
