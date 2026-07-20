@@ -4,16 +4,15 @@ import os
 import platform
 import subprocess
 import sys
-import subprocess
-import platform
 
-from image_tab import ImageTab
+from cluster_dialog import ClusterDialog
 from entity_tab import EntitiesTab
 from export_dialog import ExportDialog, ExportOptions
-from cluster_dialog import ClusterDialog
+from image_tab import ImageTab
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+
 import utility.parallel as upl
 from db import get_db
 from db.models import Entity, Image
@@ -73,6 +72,14 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeAll = QtGui.QAction("Analyze All", self)
         aAnalyzeAll.triggered.connect(self.analyzeAll)
         mAnalyze.addAction(aAnalyzeAll)
+
+        aMergeBikesFiltered = QtGui.QAction("Merge Filtered Bikes and Riders", self)
+        aMergeBikesFiltered.triggered.connect(self.analyzeMergeBikesFiltered)
+        mAnalyze.addAction(aMergeBikesFiltered)
+        aMergeBikesAll = QtGui.QAction("Merge All Bikes and Riders", self)
+        aMergeBikesAll.triggered.connect(self.analyzeMergeBikesAll)
+        mAnalyze.addAction(aMergeBikesAll)
+
         aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
         aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
         mAnalyze.addAction(aAnalyzeClustersFiltered)
@@ -90,6 +97,7 @@ class Root(QtWidgets.QMainWindow):
         )
         aAnalyzeAllPoseDirection.triggered.connect(self.analyzeAllPoseDirection)
         mAnalyze.addAction(aAnalyzeAllPoseDirection)
+
 
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
@@ -127,6 +135,14 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.analyze(False)
 
     @QtCore.Slot()
+
+    def analyzeMergeBikesFiltered(self):
+        self.imageTab.mergeBikes(True)
+
+    @QtCore.Slot()
+    def analyzeMergeBikesAll(self):
+        self.imageTab.mergeBikes(False)
+
     def analyzeClustersFiltered(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.doAnalyzeClusters(self.imageTab.getImages(True))
@@ -146,12 +162,6 @@ class Root(QtWidgets.QMainWindow):
         else:
             self.entitiesTab.refreshGallery()
     
-    def tabChanged(self):
-        if self.tabs.currentWidget() == self.imageTab:
-            self.imageTab.refreshGallery()
-        else:
-            self.entitiesTab.refreshGallery()
-
     def analyzePoseDirection(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzePoseDirection(True)

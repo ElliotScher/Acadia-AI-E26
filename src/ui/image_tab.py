@@ -1,22 +1,22 @@
 import typing
 
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
+from analyze_dialog import AnalyzeDialog
+from bike_rider_merging_dialog import BikeRiderMergeDialog
 from filters import Filters
 from filters.image import (
     AnalyzedFilter,
+    ClusterCountFilter,
     EntityFilter,
     ImageDateFilter,
     ImageTimeFilter,
     NoEntityFilter,
     NotAnalyzedFilter,
-    ClusterCountFilter,
 )
-from analyze_dialog import AnalyzeDialog
-from cluster_dialog import ClusterDialog
 from pose_direction_dialog import PoseDirectionDialog
+from PySide6 import QtCore, QtGui, QtWidgets
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from db.models import Entity, Image, Instance
 from detection.classes import CLASS_ID_MAPPING
 
@@ -231,23 +231,22 @@ class ImageTab(QtWidgets.QWidget):
         dialog.accepted.connect(self.refreshGallery)
         dialog.exec()
 
-    @QtCore.Slot(Image, result=bool)
-    def focusImage(self, image: Image) -> bool:
-        if image.id not in self.galleryModel.results:
-            return False
-        i = self.galleryModel.results.index(image.id)
-        # this is scary, and should ideally be removed
-        while i >= self.galleryModel.rowCount():
-            if not self.galleryModel.canFetchMore(QtCore.QModelIndex()):
-                return False
-            self.galleryModel.fetchMore(QtCore.QModelIndex())
-        index = self.galleryModel.index(i, 0)
-        self.gallery.scrollTo(index)
-        self.gallery.selectionModel().select(
-            QtCore.QItemSelection(index, index),
-            QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
-        )
-        return True
+    @QtCore.Slot()
+    def mergeBikes(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        images: list[Image] = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = BikeRiderMergeDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
 
     @QtCore.Slot()
     def export(self, filtered: bool, path: str):
