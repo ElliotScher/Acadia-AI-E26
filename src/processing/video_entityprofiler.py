@@ -10,14 +10,17 @@ import argparse
 import datetime
 import json
 import logging
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 from tqdm import tqdm
+from ultralytics import YOLO
 
+from src.detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
 from src.utility.geometryutils import Rectangle
 from src.utility.imgutils import (
     detect_entities,
@@ -50,6 +53,11 @@ class VideoEntityRecord:
         hsv_hist (np.ndarray): Normalised 3D HSV color histogram.
         aspect_ratio (float): Width / Height ratio of the crop.
         direction (str): "left" or "right" indicating travel direction.
+        entity_type (Optional[str]): The track's majority-vote YOLO
+            classification (e.g. "car", "bicycle", "motorcycle"), letting
+            speed be scoped to one type via --entity-type. None if
+            classification is disabled (--no-classify) or never found a
+            confident match.
         relative_speed (float): The track's raw pixel-displacement-per-second
             rate straight out of process_video, until compute_relative_speeds
             rescales it into a 0-1 ratio of the fastest entity in the batch
@@ -70,6 +78,7 @@ class VideoEntityRecord:
     hsv_hist: np.ndarray  # L2-normalized 3D HSV color histogram
     aspect_ratio: float  # Width / Height of the best crop
     direction: str  # "left" or "right" indicating travel direction
+    entity_type: Optional[str] = None  # Majority-vote YOLO classification
     relative_speed: float = 0.0  # Raw pixels/sec until normalized to [0, 1]
     absolute_speed: Optional[float] = None  # Calibrated real-world speed
 
@@ -94,6 +103,9 @@ class Track:
         boxes_history (List[Rectangle]): Bounding box positions over time. Defaults to None.
         first_frame_idx (int): The frame index where the entity was first seen,
             used to compute the track's speed. Defaults to -1.
+        type_votes (Counter): Tally of classified entity_type seen across the
+            track's lifetime - finalization picks the majority, so a few
+            misclassified frames don't flip the whole track's type.
     """
 
     entity_id: int
@@ -109,6 +121,7 @@ class Track:
     best_aspect_ratio: float = -1.0
     boxes_history: List[Rectangle] = None
     first_frame_idx: int = -1
+    type_votes: Counter = field(default_factory=Counter)
 
     def __post_init__(self):
         """
@@ -173,6 +186,18 @@ class Track:
             self.best_hsv_hist = hsv_hist
             self.best_aspect_ratio = aspect_ratio
 
+    def record_type(self, entity_type: Optional[str]) -> None:
+        """
+        Tallies a vote for this frame's classified entity_type, if any.
+
+        Args:
+            entity_type (Optional[str]): The current frame's classification,
+                or None if classification is disabled or found nothing
+                confident enough - either way, no vote is recorded.
+        """
+        if entity_type is not None:
+            self.type_votes[entity_type] += 1
+
 
 @dataclass
 class Detection:
@@ -184,12 +209,66 @@ class Detection:
         hsv_hist (np.ndarray): HSV histogram of the entity crop.
         aspect_ratio (float): Bounding box width / height ratio.
         crop (np.ndarray): Image crop of the entity.
+        entity_type (Optional[str]): YOLO classification of this frame's
+            crop, or None if classification is disabled or found nothing
+            confident enough. Defaults to None.
     """
 
     box: Rectangle
     hsv_hist: np.ndarray
     aspect_ratio: float
     crop: np.ndarray
+    entity_type: Optional[str] = None
+
+
+def classify_entity_type(
+    model: YOLO,
+    crop: np.ndarray,
+    target_classes: List[int],
+    conf_threshold: float,
+) -> Optional[str]:
+    """
+    Classifies a single tracked entity's crop with a general-purpose YOLO
+    model, so speed can later be scoped to one entity type (e.g. only
+    bicycles) instead of every entity in a run being pooled together.
+
+    Runs detection on the crop itself - already tightly bounded by the green
+    marker box detect_entities found - rather than matching against
+    full-frame YOLO detections, so no separate IoU-matching step against the
+    tracker's own boxes is needed.
+
+    Args:
+        model (YOLO): Loaded YOLO model instance.
+        crop (np.ndarray): BGR image crop of the tracked entity.
+        target_classes (List[int]): COCO class IDs to consider.
+        conf_threshold (float): Minimum confidence for a classification to count.
+
+    Returns:
+        Optional[str]: The highest-confidence class label found in the crop
+            (bus/truck merged into "car", matching video_yolo.py's category
+            grouping), or None if nothing cleared conf_threshold.
+    """
+    results = model.predict(
+        source=crop, conf=conf_threshold, classes=target_classes, verbose=False
+    )
+
+    best_label: Optional[str] = None
+    best_conf = 0.0
+    for r in results:
+        for box in r.boxes:
+            conf = float(box.conf[0])
+            if conf <= best_conf:
+                continue
+            label = CLASS_ID_MAPPING.get(int(box.cls[0]))
+            if label is None:
+                continue
+            best_conf = conf
+            best_label = label
+
+    if best_label in ("bus", "truck"):
+        best_label = "car"
+
+    return best_label
 
 
 def process_video(
@@ -198,6 +277,9 @@ def process_video(
     zones: Optional[List[Dict[str, Any]]] = None,
     progress_bar: Optional[tqdm] = None,
     start_time: Optional[datetime.datetime] = None,
+    yolo_model: Optional[YOLO] = None,
+    classify_classes: Optional[List[int]] = None,
+    classify_conf: float = 0.25,
 ) -> List[VideoEntityRecord]:
     """
     Ingests a video file, tracks unique green bounding boxes frame-by-frame,
@@ -213,10 +295,21 @@ def process_video(
             list positionally - see main()), for footage whose mtime is
             unreliable. Takes priority over get_timestamp's OCR/filename/mtime
             fallback chain when given. Defaults to None.
+        yolo_model (Optional[YOLO]): Loaded YOLO model to classify each
+            tracked entity's type (see classify_entity_type). Classification
+            is skipped entirely, and every record's entity_type stays None,
+            when not given. Defaults to None.
+        classify_classes (Optional[List[int]]): COCO class IDs to consider
+            when classifying. Defaults to None (src.detection.classes.TARGET_CLASSES).
+        classify_conf (float): Minimum confidence for a classification to
+            count. Only used when yolo_model is given. Defaults to 0.25.
 
     Returns:
         List[VideoEntityRecord]: List of tracked entity records with their best frames.
     """
+    classify_classes = (
+        classify_classes if classify_classes is not None else TARGET_CLASSES
+    )
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         logger.error("Failed to open video file %s", video_path)
@@ -298,12 +391,19 @@ def process_video(
             hsv_hist = get_hsv_hist(get_center_crop(crop, 0.12))
             aspect_ratio = float(w) / h
 
+            entity_type = None
+            if yolo_model is not None:
+                entity_type = classify_entity_type(
+                    yolo_model, crop, classify_classes, classify_conf
+                )
+
             current_detections.append(
                 Detection(
                     box=Rectangle(x=x, y=y, w=w, h=h),
                     hsv_hist=hsv_hist,
                     aspect_ratio=aspect_ratio,
                     crop=crop,
+                    entity_type=entity_type,
                 )
             )
 
@@ -343,6 +443,7 @@ def process_video(
                 frame_idx=frame_idx,
                 hsv_hist=det.hsv_hist,
             )
+            track.record_type(det.entity_type)
 
             # Check if detection falls within the allowed ROI zones
             is_excluded = Rectangle.is_box_excluded_by_zones(
@@ -376,6 +477,7 @@ def process_video(
                     last_frame_idx=frame_idx,
                     hsv_hists=[det.hsv_hist],
                 )
+                active_tracks[next_track_id].record_type(det.entity_type)
 
                 # Check if detection falls within the allowed ROI zones
                 is_excluded = Rectangle.is_box_excluded_by_zones(
@@ -442,6 +544,10 @@ def process_video(
 
         best_frame_ts = video_start_time + (track.best_frame_idx / fps)
 
+        entity_type = (
+            track.type_votes.most_common(1)[0][0] if track.type_votes else None
+        )
+
         record = VideoEntityRecord(
             video_path=video_path,
             entity_id=track.entity_id,
@@ -453,6 +559,7 @@ def process_video(
             hsv_hist=best_hsv_hist,
             aspect_ratio=track.best_aspect_ratio,
             direction=direction,
+            entity_type=entity_type,
             relative_speed=pixel_speed,
         )
         finalized_records.append(record)
@@ -597,7 +704,43 @@ def main() -> None:
         "--category",
         type=str,
         default="car",
-        help="Category suffix to append to saved filenames (default: car).",
+        help="Fallback category suffix appended to saved filenames for any "
+        "entity that isn't classified (--no-classify given, or "
+        "classification found nothing confident) (default: car).",
+    )
+    parser.add_argument(
+        "--classify-model",
+        type=str,
+        default="yolo26s.pt",
+        help="YOLO model weights (e.g. yolo26s.pt) to classify each tracked "
+        "entity's real object type (car/bicycle/motorcycle/etc.) from its "
+        "crop, so speed can be scoped to one entity type via --entity-type "
+        "(default: yolo26s.pt, matching video_yolo.py; see --no-classify to "
+        "disable). Any entity classification doesn't find a confident match "
+        "for falls back to --category.",
+    )
+    parser.add_argument(
+        "--no-classify",
+        action="store_true",
+        help="Skip YOLO classification entirely - every entity falls back "
+        "to --category, matching the pipeline's pre-classification behavior. "
+        "Faster, since it skips a YOLO forward pass per tracked crop.",
+    )
+    parser.add_argument(
+        "--classify-conf",
+        type=float,
+        default=0.25,
+        help="Minimum confidence for a classification to count. Only used "
+        "when classification is enabled (default: 0.25).",
+    )
+    parser.add_argument(
+        "--entity-type",
+        type=str,
+        default=None,
+        help="If given (e.g. 'bicycle'), only entities classified as this "
+        "type are kept - every other entity is dropped before speed "
+        "normalization, calibration, frame export, and the report. "
+        "Incompatible with --no-classify.",
     )
     parser.add_argument(
         "--downsample",
@@ -658,6 +801,12 @@ def main() -> None:
         logger.error("--reference-entity-id requires --reference-speed.")
         raise SystemExit(1)
 
+    if args.entity_type is not None and args.no_classify:
+        logger.error("--entity-type requires classification (can't combine with --no-classify).")
+        raise SystemExit(1)
+
+    yolo_model = YOLO(args.classify_model) if not args.no_classify else None
+
     start_times = load_video_start_times(args.start_times) if args.start_times else None
 
     # Load labels.json zones if present
@@ -706,11 +855,23 @@ def main() -> None:
             zones=zones,
             progress_bar=progress_bar,
             start_time=start_times[i] if start_times is not None else None,
+            yolo_model=yolo_model,
+            classify_conf=args.classify_conf,
         )
         progress_bar.close()
 
         logger.info("Found %d unique entities in %s.", len(records), video_path.name)
         all_records.extend(records)
+
+    if args.entity_type is not None:
+        before = len(all_records)
+        all_records = [r for r in all_records if r.entity_type == args.entity_type]
+        logger.info(
+            "Filtered to entity_type '%s': %d/%d entities kept.",
+            args.entity_type,
+            len(all_records),
+            before,
+        )
 
     # Normalize every entity's raw speed into a 0-1 relative_speed together,
     # so speeds are comparable across entities/videos rather than each
@@ -740,8 +901,11 @@ def main() -> None:
     logger.info("Saving best frames to %s...", output_folder)
     for record in all_records:
         video_name = record.video_path.stem
-        # Append the direction and category suffix so image_occupancyprofiler.py detects it
-        out_name = f"entity_{record.entity_id}_{record.direction}_{args.category}.jpg"
+        # Append the direction and category suffix so image_occupancyprofiler.py
+        # detects it - the classified entity_type when available, else the
+        # manual --category fallback.
+        category = record.entity_type or args.category
+        out_name = f"entity_{record.entity_id}_{record.direction}_{category}.jpg"
         out_path = output_folder / video_name / out_name
         out_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(out_path), record.best_frame)
@@ -764,6 +928,8 @@ def main() -> None:
                 "output_dir": str(output_folder),
                 "total_videos_processed": len(video_files),
                 "category": args.category,
+                "classify_model": None if args.no_classify else args.classify_model,
+                "entity_type_filter": args.entity_type,
                 "start_times_file": args.start_times,
                 "reference_entity_id": args.reference_entity_id,
                 "reference_speed": args.reference_speed,
@@ -778,6 +944,7 @@ def main() -> None:
                     "timestamp": r.timestamp,
                     "aspect_ratio": r.aspect_ratio,
                     "direction": r.direction,
+                    "entity_type": r.entity_type,
                     "relative_speed": r.relative_speed,
                     "absolute_speed": r.absolute_speed,
                     "best_box": [

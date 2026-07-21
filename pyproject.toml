@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "ultralytics>=8.0.0",
     "opencv-python>=4.0.0",
+    "opencv-contrib-python>=5.0.0.93",
     "tqdm>=4.66.0",
     "torch>=2.12.1",
     "pyside6>=6.11.1",
