@@ -17,7 +17,6 @@ from detection.classes import CLASS_ID_MAPPING
 from utility.parallel import ProgressTracker
 
 import cv2
-import numpy as np
 import torch
 from tqdm import tqdm
 from ultralytics import YOLO
@@ -38,12 +37,10 @@ class DetectionResult:
 
     Args:
         image_path (Path): Path to the source image.
-        image (np.ndarray): BGR image representation.
         boxes (List[Tuple[Rectangle, int, float]]): List of (rectangle, id, confidence) detections.
     """
 
     image_path: Path
-    image: np.ndarray | None  # BGR image representation
     boxes: List[Tuple[Rectangle, int, float]]  # List of (rectangle, id, confidence)
 
 def load_model(model_name: str) -> YOLO:
@@ -134,7 +131,7 @@ def process_images(
                     boxes_found.append((rect, cls, conf))
 
             results_list.append(
-                DetectionResult(image_path=img_path, image=image, boxes=boxes_found)
+                DetectionResult(image_path=img_path, boxes=boxes_found)
             )
 
         except Exception as e:
@@ -161,7 +158,7 @@ def save_annotated_images(
     """
     for res in results:
         img_path = res.image_path
-        image = res.image
+        image = cv2.imread(str(img_path))
         boxes = res.boxes
 
         out_path_base = output_folder / img_path.relative_to(input_folder)
@@ -273,7 +270,7 @@ def main() -> None:
         action="store_true",
         help="Do not save annotated images.",
     )
-    from src.utility.loggingutils import setup_logging_and_paths
+    from utility.loggingutils import setup_logging_and_paths
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
     assert input_folder is not None and output_folder is not None

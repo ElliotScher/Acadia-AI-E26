@@ -111,7 +111,6 @@ def process_clusters(
         clusters.append(
             Cluster((x1, y1, x2, y2), classCounts, DetectionResult(
                 detectionResults.image_path,
-                detectionResults.image,
                 list(detections[i] for i in idxs)
             ))
         )
@@ -243,7 +242,7 @@ def process_images(
 
             results_list.extend(
                 process_clusters(
-                    DetectionResult(image_path=img_path, image=image, boxes=boxes_found),
+                    DetectionResult(image_path=img_path, boxes=boxes_found),
                     max_distance,
                     max_size_ratio
                 )
@@ -276,7 +275,7 @@ def save_annotated_images(
     for res in results:
         img_path = res.detections.image_path
         paths.append(img_path)
-        image = res.detections.image
+        image = cv2.imread(str(res.detections.image_path))
 
         out_path_base = output_folder / img_path.relative_to(input_folder)
         out_path_base.parent.mkdir(parents=True, exist_ok=True)

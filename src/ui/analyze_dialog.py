@@ -1,22 +1,20 @@
-from setuptools.config.setupcfg import Target
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy.orm import Session
-from sqlalchemy import select
+import functools
 import logging
 import math
+import os
 from pathlib import Path
-import functools
 
-from db.models import Image, Instance, Entity
-from detection.classes import (
-    CLASS_ID_MAPPING,
-    TARGET_CLASSES
-)
-from detection.image_yolo import (
-    process_images,
-    DetectionResult,
-)
+from PySide6 import QtCore, QtWidgets
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 import utility.parallel as upl
+from db.models import Entity, Image, Instance
+from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
+from detection.image_yolo import (
+    DetectionResult,
+    process_images,
+)
 
 
 class AnalyzeDialog(QtWidgets.QDialog):
@@ -138,10 +136,16 @@ class AnalyzeDialog(QtWidgets.QDialog):
         if self.threadsRunning > 1:
             return
         for r in self.results:
-            image = self.session.scalar(select(Image).where(Image.path == r.image_path.as_posix()))
+            image = self.session.scalar(
+                select(Image).where(
+                    Image.path == os.path.normpath(r.image_path.absolute())
+                )
+            )
             if not image:
                 logger = logging.Logger("analyze_dialog")
-                logger.log(logging.WARN, f"couldn't find image {r.image_path} in the database")
+                logger.log(
+                    logging.WARN, f"couldn't find image {r.image_path} in the database"
+                )
                 return
             if image.analyzed:
                 for instance in image.get_instances(self.session):
