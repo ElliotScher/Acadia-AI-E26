@@ -1,15 +1,14 @@
-import datetime
 from typing import Callable
 from setuptools.config.setupcfg import Target
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+import functools
 import logging
 import math
-from pathlib import Path
-import functools
-import cv2
 import os
+from pathlib import Path
+import cv2
 import datetime as dt
 
 from db.models import Image, Instance, Entity, Video
