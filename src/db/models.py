@@ -1,38 +1,38 @@
 from __future__ import annotations
 
+import csv
+import datetime as dt
+import os
 from pathlib import Path
 
 from sqlalchemy import (
-    String,
+    DDL,
+    Boolean,
     DateTime,
     Float,
-    Integer,
-    Boolean,
     ForeignKey,
+    Integer,
+    String,
     Time,
-    DDL,
-    select,
     desc,
     event,
     exists,
+    select,
 )
 from sqlalchemy.orm import (
-    Mapped,
-    WriteOnlyMapped,
-    Session,
     DeclarativeBase,
+    Mapped,
+    Session,
+    WriteOnlyMapped,
     mapped_column,
     relationship,
 )
-from pathlib import Path
-import datetime as dt
-import os
-import csv
 
 from detection.classes import CLASS_ID_MAPPING
 from detection.image_yolo import DetectionResult
 from detection.pose_direction import process_single_image
 from utility.geometryutils import Rectangle
+
 
 class Base(DeclarativeBase):
     pass

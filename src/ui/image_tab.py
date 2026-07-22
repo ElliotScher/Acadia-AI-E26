@@ -1,4 +1,5 @@
 import typing
+import cv2
 
 from analyze_dialog import AnalyzeDialog
 from bike_rider_merging_dialog import BikeRiderMergeDialog
@@ -279,6 +280,7 @@ class ImageGallery(QtWidgets.QListView):
 
 class ImageInfo(QtWidgets.QGroupBox):
     entityOpened = QtCore.Signal(Entity)
+    image: Image | None
 
     def __init__(self):
         super().__init__()
@@ -301,15 +303,17 @@ class ImageInfo(QtWidgets.QGroupBox):
         self.info.hide()
 
     def showImage(self, image: Image | None, session: Session):
+        self.image = image
+        self.session = session
         if image:
-            self.showInfo(image, session)
+            self.showInfo(image)
         else:
             self.info.hide()
             self.viewer.hide()
             self.placeholder.show()
 
-    def showInfo(self, image: Image, session: Session):
-        instances = image.get_instances(session)
+    def showInfo(self, image: Image):
+        instances = image.get_instances(self.session)
         self.entities.clear()
 
         def makeEntityButton(
@@ -353,14 +357,50 @@ class ImageInfo(QtWidgets.QGroupBox):
     def buildinfo(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget(self)
         layout = QtWidgets.QVBoxLayout(widget)
+        hb = QtWidgets.QHBoxLayout(widget)
+        layout.addLayout(hb)
         self.imgdate = QtWidgets.QLabel("A long time ago...", widget)
-        layout.addWidget(self.imgdate)
+        hb.addWidget(self.imgdate)
+        self.exportButton = QtWidgets.QToolButton(widget)
+        self.exportButton.setIcon(
+            QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.DocumentSave)
+        )
+        self.exportButton.pressed.connect(self.exportImage)
+        hb.addWidget(self.exportButton)
         self.entities = QtWidgets.QListWidget(widget)
         layout.addWidget(self.entities)
         self.entities.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.NoSelection
         )
         return widget
+
+    @QtCore.Slot()
+    def exportImage(self):
+        if not self.image:
+            return
+        imbuf = cv2.imread(str(self.image.path))
+        if imbuf is None:
+            return
+        path = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save as...",
+            str(self.image.path),
+            "PNG (*.png);;JPG (*.jpg *.jpeg);;BMP (*.bmp)",
+        )[0]
+        if not path:
+            return
+        i = 0
+        for instance in self.image.get_instances(self.session):
+            c = colors[i]
+            cv2.rectangle(
+                imbuf,
+                (instance.x, instance.y),
+                (instance.x + instance.width, instance.y + instance.height),
+                (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)),
+                (imbuf.shape[0] + imbuf.shape[1]) // 500,
+            )
+            i += 1
+        cv2.imwrite(path, imbuf)
 
 
 class ImageViewer(QtWidgets.QGraphicsView):
