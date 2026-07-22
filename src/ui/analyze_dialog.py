@@ -220,7 +220,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 continue
 
             image = self.session.scalar(
-                select(Image).where(Image.path == r.image_path.as_posix())
+                select(Image).where(
+                    Image.path == os.path.normpath(r.image_path.absolute())
+                )
             )
             if not image:
                 logger = logging.Logger("analyze_dialog")
@@ -267,7 +269,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
 
             frames: dict[int, Image] = dict()
             video = self.session.scalar(
-                select(Video).where(Video.path == r.video_path.as_posix())
+                select(Video).where(Video.path == os.path.normpath(r.video_path.absolute()))
             )
             if not video:
                 logger = logging.Logger("analyze_dialog")
