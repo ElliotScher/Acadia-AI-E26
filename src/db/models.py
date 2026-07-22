@@ -93,7 +93,7 @@ class Image(Base):
                 ):
                     continue
 
-                path = os.path.join(root, file)
+                path = os.path.normpath(os.path.abspath(os.path.join(root, file)))
                 if session.query(exists().where(Image.path == path)).scalar():
                     continue
 
