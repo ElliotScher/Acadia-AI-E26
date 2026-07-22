@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-from detection.classes import CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING, merge_vehicle_class_id
 
 import cv2
 from tqdm import tqdm
@@ -40,13 +40,18 @@ class DetectionResult:
 
     Args:
         video_path (Path): Path to the source video.
-        boxes (List[Tuple[int, Rectangle, int, float]]): List of (frame_idx, rectangle, class_id, confidence) detections.
+        boxes (List[Tuple[int, Rectangle, int, float, str]]): List of
+            (frame_idx, rectangle, class_id, confidence, label) detections -
+            class_id has bus/truck already merged into car's id (see
+            merge_vehicle_class_id), and label is just that (merged)
+            class_id's resolved display name, or "license_plate" for
+            plate-model detections (class_id -1).
     """
 
     video_path: Path
     boxes: List[
-        Tuple[int, Rectangle, int, float]
-    ]  # List of (frame_idx, rectangle, id, confidence)
+        Tuple[int, Rectangle, int, float, str]
+    ]  # List of (frame_idx, rectangle, id, confidence, label)
 
 
 def open_video_capture(video_path: Union[str, Path]) -> cv2.VideoCapture:
@@ -65,7 +70,7 @@ def open_video_capture(video_path: Union[str, Path]) -> cv2.VideoCapture:
 def _frame_worker(
     model_name: str,
     frame_queue: queue.Queue,
-    results_by_video: dict[Path, list[tuple[int, Rectangle, int, float]]],
+    results_by_video: dict[Path, list[tuple[int, Rectangle, int, float, str]]],
     results_lock: threading.Lock,
     progress_bar: tqdm,
     inclusion_region: Optional[Rectangle],
@@ -135,7 +140,7 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            boxes_found: list[tuple[int, Rectangle, int, float]] = []
+            boxes_found: list[tuple[int, Rectangle, int, float, str]] = []
 
             if thread_model is not None:
                 results = thread_model.predict(
@@ -164,7 +169,11 @@ def _frame_worker(
 
                         conf = float(box.conf[0])
                         rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, cls, conf))
+                        merged_cls = merge_vehicle_class_id(cls)
+                        label = CLASS_ID_MAPPING.get(merged_cls, str(merged_cls))
+                        boxes_found.append(
+                            (frame_idx, rect, merged_cls, conf, label)
+                        )
 
             if thread_plate_model is not None:
                 plate_results = thread_plate_model.predict(
@@ -188,7 +197,7 @@ def _frame_worker(
 
                         conf = float(box.conf[0])
                         rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, -1, conf))
+                        boxes_found.append((frame_idx, rect, -1, conf, "license_plate"))
 
             if boxes_found:
                 with results_lock:
@@ -246,7 +255,7 @@ def process_videos(
     if not valid_video_paths:
         return []
 
-    results_by_video: dict[Path, list[tuple[int, Rectangle, int, float]]] = {
+    results_by_video: dict[Path, list[tuple[int, Rectangle, int, float, str]]] = {
         vp: [] for vp in valid_video_paths
     }
     results_lock = threading.Lock()
@@ -424,11 +433,11 @@ def save_annotated_videos(
         out = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
 
         # Group boxes by frame index for quick lookup
-        boxes_by_frame: Dict[int, List[Tuple[Rectangle, int, float]]] = {}
-        for frame_idx, rect, coco_id, conf in boxes:
+        boxes_by_frame: Dict[int, List[Tuple[Rectangle, int, float, str]]] = {}
+        for frame_idx, rect, coco_id, conf, label in boxes:
             if frame_idx not in boxes_by_frame:
                 boxes_by_frame[frame_idx] = []
-            boxes_by_frame[frame_idx].append((rect, coco_id, conf))
+            boxes_by_frame[frame_idx].append((rect, coco_id, conf, label))
 
         frame_idx = 0
         expected_frames = 0
@@ -447,7 +456,7 @@ def save_annotated_videos(
                 # Draw rectangles on the frame - every detected class (including
                 # license plates) is drawn the same way, since only the classes
                 # actually requested via --classes ever appear here.
-                for rect, coco_id, conf in boxes_by_frame[frame_idx]:
+                for rect, coco_id, conf, label in boxes_by_frame[frame_idx]:
                     cv2.rectangle(
                         frame,
                         (rect.x, rect.y),
@@ -619,9 +628,8 @@ def main() -> None:
             model = YOLO(args.model)
             for cls in target_classes:
                 if cls in model.names:
-                    label = model.names[cls]
-                    if label in ["car", "bus", "truck"]:
-                        label = "car"
+                    merged_cls = merge_vehicle_class_id(cls)
+                    label = CLASS_ID_MAPPING.get(merged_cls, model.names[cls])
                     total_counts[label] = 0
                 else:
                     logger.warning("Class ID %d not found in model names.", cls)
@@ -685,14 +693,13 @@ def main() -> None:
     else:
         logger.info("Skipping saving annotated videos as requested.")
 
-    detection_details: Dict[str, List[Dict[str, Union[int, List[int], float]]]] = (
+    detection_details: Dict[str, List[Dict[str, Union[int, List[int], float, str]]]] = (
         {}
     )
     for res in all_results:
         relative_key = str(res.video_path.relative_to(input_folder))
         file_detections = []
-        for frame_idx, rect, coco_id, conf in res.boxes:
-            label = CLASS_ID_MAPPING[coco_id]
+        for frame_idx, rect, coco_id, conf, label in res.boxes:
             if label not in total_counts:
                 total_counts[label] = 0
             total_counts[label] += 1
@@ -701,7 +708,8 @@ def main() -> None:
                 {
                     "frame_index": frame_idx,
                     "box": [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h],
-                    "label": coco_id,
+                    "class_id": coco_id,
+                    "label": label,
                     "confidence": conf,
                 }
             )

@@ -1,9 +1,16 @@
 """
 Video Entity Extractor
 
-Parses video files to track unique entities frame-to-frame by locating
-green bounding boxes, and exports the best (largest and sharpest) raw frames
-for downstream analysis by image_occupancyprofiler.py.
+Tracks unique entities frame-to-frame using pre-computed bounding boxes and
+COCO class ids from a video_yolo.py JSON report (see its -r/--report flag),
+and exports the best (largest and sharpest) raw frames for downstream
+analysis by image_occupancyprofiler.py.
+
+This deliberately doesn't detect or classify anything itself - video_yolo.py
+already runs YOLO across every frame of the same videos, so re-deriving boxes
+here would just be a lossy re-detection of data that already exists. Run
+video_yolo.py against the same input_dir first and pass its report via
+--yolo-report.
 """
 
 import argparse
@@ -18,12 +25,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 from tqdm import tqdm
-from ultralytics import YOLO
 
-from src.detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
+from src.detection.classes import CLASS_ID_MAPPING
 from src.utility.geometryutils import Rectangle
 from src.utility.imgutils import (
-    detect_entities,
     get_center_crop,
     get_hsv_hist,
     get_timestamp,
@@ -53,11 +58,13 @@ class VideoEntityRecord:
         hsv_hist (np.ndarray): Normalised 3D HSV color histogram.
         aspect_ratio (float): Width / Height ratio of the crop.
         direction (str): "left" or "right" indicating travel direction.
-        entity_type (Optional[str]): The track's majority-vote YOLO
-            classification (e.g. "car", "bicycle", "motorcycle"), letting
-            speed be scoped to one type via --entity-type. None if
-            classification is disabled (--no-classify) or never found a
-            confident match.
+        entity_type (Optional[int]): The track's majority-vote COCO class id,
+            taken from video_yolo.py's report (e.g. 2 for car, 1 for
+            bicycle - see src.detection.classes.CLASS_ID_MAPPING, and note
+            bus/truck are already merged into car's id there), letting speed
+            be scoped to one type via --entity-type. None only if the track
+            somehow accumulated no detections with a class id, which
+            shouldn't happen in practice.
         relative_speed (float): The track's raw pixel-displacement-per-second
             rate straight out of process_video, until compute_relative_speeds
             rescales it into a 0-1 ratio of the fastest entity in the batch
@@ -78,7 +85,7 @@ class VideoEntityRecord:
     hsv_hist: np.ndarray  # L2-normalized 3D HSV color histogram
     aspect_ratio: float  # Width / Height of the best crop
     direction: str  # "left" or "right" indicating travel direction
-    entity_type: Optional[str] = None  # Majority-vote YOLO classification
+    entity_type: Optional[int] = None  # Majority-vote COCO class id from the yolo report
     relative_speed: float = 0.0  # Raw pixels/sec until normalized to [0, 1]
     absolute_speed: Optional[float] = None  # Calibrated real-world speed
 
@@ -103,9 +110,10 @@ class Track:
         boxes_history (List[Rectangle]): Bounding box positions over time. Defaults to None.
         first_frame_idx (int): The frame index where the entity was first seen,
             used to compute the track's speed. Defaults to -1.
-        type_votes (Counter): Tally of classified entity_type seen across the
-            track's lifetime - finalization picks the majority, so a few
-            misclassified frames don't flip the whole track's type.
+        type_votes (Counter): Tally of the COCO class id seen on each matched
+            detection across the track's lifetime - finalization picks the
+            majority, so a few frames the yolo report misclassified don't
+            flip the whole track's type.
     """
 
     entity_id: int
@@ -186,17 +194,15 @@ class Track:
             self.best_hsv_hist = hsv_hist
             self.best_aspect_ratio = aspect_ratio
 
-    def record_type(self, entity_type: Optional[str]) -> None:
+    def record_type(self, entity_type: int) -> None:
         """
-        Tallies a vote for this frame's classified entity_type, if any.
+        Tallies a vote for this frame's detection class id.
 
         Args:
-            entity_type (Optional[str]): The current frame's classification,
-                or None if classification is disabled or found nothing
-                confident enough - either way, no vote is recorded.
+            entity_type (int): The COCO class id carried by the detection
+                just matched onto this track.
         """
-        if entity_type is not None:
-            self.type_votes[entity_type] += 1
+        self.type_votes[entity_type] += 1
 
 
 @dataclass
@@ -209,84 +215,72 @@ class Detection:
         hsv_hist (np.ndarray): HSV histogram of the entity crop.
         aspect_ratio (float): Bounding box width / height ratio.
         crop (np.ndarray): Image crop of the entity.
-        entity_type (Optional[str]): YOLO classification of this frame's
-            crop, or None if classification is disabled or found nothing
-            confident enough. Defaults to None.
+        entity_type (int): The COCO class id video_yolo.py assigned this
+            detection (bus/truck already merged into car's id).
     """
 
     box: Rectangle
     hsv_hist: np.ndarray
     aspect_ratio: float
     crop: np.ndarray
-    entity_type: Optional[str] = None
+    entity_type: int
 
 
-def classify_entity_type(
-    model: YOLO,
-    crop: np.ndarray,
-    target_classes: List[int],
-    conf_threshold: float,
-) -> Optional[str]:
+def load_yolo_detections(
+    report_path: Union[str, Path],
+) -> Dict[str, Dict[int, List[Tuple[Rectangle, int]]]]:
     """
-    Classifies a single tracked entity's crop with a general-purpose YOLO
-    model, so speed can later be scoped to one entity type (e.g. only
-    bicycles) instead of every entity in a run being pooled together.
-
-    Runs detection on the crop itself - already tightly bounded by the green
-    marker box detect_entities found - rather than matching against
-    full-frame YOLO detections, so no separate IoU-matching step against the
-    tracker's own boxes is needed.
+    Loads a video_yolo.py JSON report and reshapes its flat per-video
+    detection lists into a frame_idx-keyed lookup, so process_video can pull
+    each frame's boxes/class ids directly instead of detecting them itself.
 
     Args:
-        model (YOLO): Loaded YOLO model instance.
-        crop (np.ndarray): BGR image crop of the tracked entity.
-        target_classes (List[int]): COCO class IDs to consider.
-        conf_threshold (float): Minimum confidence for a classification to count.
+        report_path (Union[str, Path]): Path to a video_yolo.py JSON report
+            (produced by its -r/--report flag), generated against the same
+            input_dir this script will process.
 
     Returns:
-        Optional[str]: The highest-confidence class label found in the crop
-            (bus/truck merged into "car", matching video_yolo.py's category
-            grouping), or None if nothing cleared conf_threshold.
+        Dict[str, Dict[int, List[Tuple[Rectangle, int]]]]: Relative video
+            path (as recorded by video_yolo.py, e.g. "clip.mp4" or
+            "sub/clip.mp4") -> 0-based frame index -> list of (box,
+            class_id) detections found in that frame - class_id is the COCO
+            id already merged by video_yolo.py (bus/truck folded into car).
     """
-    results = model.predict(
-        source=crop, conf=conf_threshold, classes=target_classes, verbose=False
-    )
+    with open(report_path, "r") as f:
+        report = json.load(f)
 
-    best_label: Optional[str] = None
-    best_conf = 0.0
-    for r in results:
-        for box in r.boxes:
-            conf = float(box.conf[0])
-            if conf <= best_conf:
-                continue
-            label = CLASS_ID_MAPPING.get(int(box.cls[0]))
-            if label is None:
-                continue
-            best_conf = conf
-            best_label = label
+    by_video: Dict[str, Dict[int, List[Tuple[Rectangle, int]]]] = {}
+    for relative_key, entries in report.get("detections", {}).items():
+        frame_map: Dict[int, List[Tuple[Rectangle, int]]] = {}
+        for entry in entries:
+            x1, y1, x2, y2 = entry["box"]
+            rect = Rectangle(x=int(x1), y=int(y1), w=int(x2 - x1), h=int(y2 - y1))
+            frame_map.setdefault(entry["frame_index"], []).append(
+                (rect, entry["class_id"])
+            )
+        by_video[relative_key] = frame_map
 
-    if best_label in ("bus", "truck"):
-        best_label = "car"
-
-    return best_label
+    return by_video
 
 
 def process_video(
     video_path: Path,
+    frame_detections: Dict[int, List[Tuple[Rectangle, int]]],
     downsample_factor: int = 1,
     zones: Optional[List[Dict[str, Any]]] = None,
     progress_bar: Optional[tqdm] = None,
     start_time: Optional[datetime.datetime] = None,
-    yolo_model: Optional[YOLO] = None,
-    classify_classes: Optional[List[int]] = None,
-    classify_conf: float = 0.25,
 ) -> List[VideoEntityRecord]:
     """
-    Ingests a video file, tracks unique green bounding boxes frame-by-frame,
-    and returns a list of VideoEntityRecord objects.
+    Ingests a video file, tracks entities frame-to-frame using pre-computed
+    detections, and returns a list of VideoEntityRecord objects.
 
     Args:
         video_path (Path): Path to the video file to process.
+        frame_detections (Dict[int, List[Tuple[Rectangle, int]]]): This
+            video's 0-based frame index -> list of (box, class_id)
+            detections, as produced by load_yolo_detections. Frames with no
+            entry (or an empty list) are treated as having no detections.
         downsample_factor (int): Process every Nth frame. Defaults to 1.
         zones (Optional[List[Dict[str, Any]]]): Optional inclusion/exclusion zones list.
         progress_bar (Optional[tqdm]): Progress bar to update per-frame. Defaults to None.
@@ -295,21 +289,10 @@ def process_video(
             list positionally - see main()), for footage whose mtime is
             unreliable. Takes priority over get_timestamp's OCR/filename/mtime
             fallback chain when given. Defaults to None.
-        yolo_model (Optional[YOLO]): Loaded YOLO model to classify each
-            tracked entity's type (see classify_entity_type). Classification
-            is skipped entirely, and every record's entity_type stays None,
-            when not given. Defaults to None.
-        classify_classes (Optional[List[int]]): COCO class IDs to consider
-            when classifying. Defaults to None (src.detection.classes.TARGET_CLASSES).
-        classify_conf (float): Minimum confidence for a classification to
-            count. Only used when yolo_model is given. Defaults to 0.25.
 
     Returns:
         List[VideoEntityRecord]: List of tracked entity records with their best frames.
     """
-    classify_classes = (
-        classify_classes if classify_classes is not None else TARGET_CLASSES
-    )
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         logger.error("Failed to open video file %s", video_path)
@@ -371,19 +354,18 @@ def process_video(
         if not ret:
             break
 
-        frame_idx += 1
         if progress_bar is not None:
             progress_bar.update(1)
 
         if frame_idx % downsample_factor != 0:
+            frame_idx += 1
             continue
 
-        # Detect green bounding boxes
-        boxes = detect_entities(frame)
-
         current_detections: List[Detection] = []
-        for box in boxes:
+        for box, class_id in frame_detections.get(frame_idx, []):
             x, y, w, h = box.x, box.y, box.w, box.h
+            if w <= 0 or h <= 0:
+                continue
             crop = frame[y : y + h, x : x + w]
             if crop.size == 0:
                 continue
@@ -391,19 +373,13 @@ def process_video(
             hsv_hist = get_hsv_hist(get_center_crop(crop, 0.12))
             aspect_ratio = float(w) / h
 
-            entity_type = None
-            if yolo_model is not None:
-                entity_type = classify_entity_type(
-                    yolo_model, crop, classify_classes, classify_conf
-                )
-
             current_detections.append(
                 Detection(
-                    box=Rectangle(x=x, y=y, w=w, h=h),
+                    box=box,
                     hsv_hist=hsv_hist,
                     aspect_ratio=aspect_ratio,
                     crop=crop,
-                    entity_type=entity_type,
+                    entity_type=class_id,
                 )
             )
 
@@ -502,6 +478,8 @@ def process_video(
                         aspect_ratio=det.aspect_ratio,
                     )
                 next_track_id += 1
+
+        frame_idx += 1
 
     cap.release()
 
@@ -653,16 +631,21 @@ def calibrate_absolute_speeds(
     """
     candidates = [r for r in records if r.entity_id == reference_entity_id]
 
+    if not candidates:
+        raise ValueError(f"No entity with entity_id {reference_entity_id} found.")
+
     if reference_video_path is not None:
         ref_name = Path(reference_video_path).name
-        candidates = [r for r in candidates if Path(r.video_path).name == ref_name]
+        video_matched = [r for r in candidates if Path(r.video_path).name == ref_name]
+        if not video_matched:
+            found_videos = sorted({r.video_path.name for r in candidates})
+            raise ValueError(
+                f"Entity_id {reference_entity_id} was found, but not in a video "
+                f"named '{ref_name}' (matched by filename, not full path) - it "
+                f"appears in: {', '.join(found_videos)}."
+            )
+        candidates = video_matched
 
-    if not candidates:
-        raise ValueError(
-            f"No entity with entity_id {reference_entity_id} found"
-            + (f" in video '{reference_video_path}'" if reference_video_path else "")
-            + "."
-        )
     if len(candidates) > 1:
         raise ValueError(
             f"Multiple entities with entity_id {reference_entity_id} found across "
@@ -688,12 +671,16 @@ def main() -> None:
     Main CLI entry point for the video entity profiler.
     """
     parser = argparse.ArgumentParser(
-        description="Extract best raw frames containing tracked green boxes for image_occupancyprofiler.py."
+        description="Extract best raw frames containing tracked entities for "
+        "image_occupancyprofiler.py, using bounding boxes and classification "
+        "labels from a video_yolo.py report."
     )
     parser.add_argument(
         "input_dir",
         type=str,
-        help="Path to the input directory containing video files.",
+        help="Path to the input directory containing video files - must be "
+        "the same input_dir video_yolo.py was run against to produce "
+        "--yolo-report, since detections are matched by relative video path.",
     )
     parser.add_argument(
         "output_dir",
@@ -701,46 +688,31 @@ def main() -> None:
         help="Path to the output directory to save best frames.",
     )
     parser.add_argument(
+        "--yolo-report",
+        type=str,
+        required=True,
+        help="Path to a video_yolo.py JSON report (from its -r/--report "
+        "flag), generated against the same input_dir. Supplies every "
+        "frame's bounding boxes and classification labels - this script no "
+        "longer detects or classifies entities itself.",
+    )
+    parser.add_argument(
         "--category",
         type=str,
         default="car",
-        help="Fallback category suffix appended to saved filenames for any "
-        "entity that isn't classified (--no-classify given, or "
-        "classification found nothing confident) (default: car).",
-    )
-    parser.add_argument(
-        "--classify-model",
-        type=str,
-        default="yolo26s.pt",
-        help="YOLO model weights (e.g. yolo26s.pt) to classify each tracked "
-        "entity's real object type (car/bicycle/motorcycle/etc.) from its "
-        "crop, so speed can be scoped to one entity type via --entity-type "
-        "(default: yolo26s.pt, matching video_yolo.py; see --no-classify to "
-        "disable). Any entity classification doesn't find a confident match "
-        "for falls back to --category.",
-    )
-    parser.add_argument(
-        "--no-classify",
-        action="store_true",
-        help="Skip YOLO classification entirely - every entity falls back "
-        "to --category, matching the pipeline's pre-classification behavior. "
-        "Faster, since it skips a YOLO forward pass per tracked crop.",
-    )
-    parser.add_argument(
-        "--classify-conf",
-        type=float,
-        default=0.25,
-        help="Minimum confidence for a classification to count. Only used "
-        "when classification is enabled (default: 0.25).",
+        help="Fallback category suffix appended to saved filenames for the "
+        "rare entity that ends up with no recorded class id (default: car).",
     )
     parser.add_argument(
         "--entity-type",
-        type=str,
+        type=int,
         default=None,
-        help="If given (e.g. 'bicycle'), only entities classified as this "
-        "type are kept - every other entity is dropped before speed "
-        "normalization, calibration, frame export, and the report. "
-        "Incompatible with --no-classify.",
+        help="If given (e.g. 2 for car, 1 for bicycle - see "
+        "src/detection/classes.py's CLASS_ID_MAPPING; note bus/truck are "
+        "already merged into car's id), only entities whose majority-vote "
+        "COCO class id (from --yolo-report) matches this are kept - every "
+        "other entity is dropped before speed normalization, frame export, "
+        "and the report.",
     )
     parser.add_argument(
         "--downsample",
@@ -761,32 +733,6 @@ def main() -> None:
         "usual OCR/filename/mtime resolution for every video).",
     )
     parser.add_argument(
-        "--reference-entity-id",
-        type=int,
-        default=None,
-        help="entity_id of one tracked vehicle whose actual real-world speed is "
-        "known, to calibrate every entity's absolute_speed from its "
-        "relative_speed (see calibrate_absolute_speeds). Requires "
-        "--reference-speed. If more than one video produced this entity_id, "
-        "also pass --reference-video to disambiguate.",
-    )
-    parser.add_argument(
-        "--reference-speed",
-        type=float,
-        default=None,
-        help="The reference entity's actual real-world speed (e.g. in mph) - "
-        "used with --reference-entity-id. Whatever unit you give here is the "
-        "unit every entity's absolute_speed ends up in.",
-    )
-    parser.add_argument(
-        "--reference-video",
-        type=str,
-        default=None,
-        help="Filename of the video --reference-entity-id came from, to "
-        "disambiguate when multiple videos produced that entity_id. Only "
-        "needed if --reference-entity-id is otherwise ambiguous.",
-    )
-    parser.add_argument(
         "-r",
         "--report",
         type=str,
@@ -797,15 +743,16 @@ def main() -> None:
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
     assert input_folder is not None and output_folder is not None
 
-    if args.reference_entity_id is not None and args.reference_speed is None:
-        logger.error("--reference-entity-id requires --reference-speed.")
+    yolo_report_path = Path(args.yolo_report)
+    if not yolo_report_path.is_file():
+        logger.error("--yolo-report file '%s' does not exist.", yolo_report_path)
         raise SystemExit(1)
 
-    if args.entity_type is not None and args.no_classify:
-        logger.error("--entity-type requires classification (can't combine with --no-classify).")
+    try:
+        detections_by_video = load_yolo_detections(yolo_report_path)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.error("Failed to load --yolo-report '%s': %s", yolo_report_path, e)
         raise SystemExit(1)
-
-    yolo_model = YOLO(args.classify_model) if not args.no_classify else None
 
     start_times = load_video_start_times(args.start_times) if args.start_times else None
 
@@ -843,6 +790,18 @@ def main() -> None:
     all_records: List[VideoEntityRecord] = []
 
     for i, video_path in enumerate(video_files):
+        relative_key = str(video_path.relative_to(input_folder))
+        frame_detections = detections_by_video.get(relative_key)
+        if frame_detections is None:
+            logger.warning(
+                "No detections found for '%s' in --yolo-report (expected key "
+                "'%s') - it will produce no tracked entities. Make sure "
+                "--yolo-report was generated from this same input_dir.",
+                video_path.name,
+                relative_key,
+            )
+            frame_detections = {}
+
         logger.info("Processing video: %s", video_path.name)
         cap = cv2.VideoCapture(str(video_path))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -851,12 +810,11 @@ def main() -> None:
         progress_bar = tqdm(total=total_frames, desc=video_path.name, unit="frame")
         records = process_video(
             video_path=video_path,
+            frame_detections=frame_detections,
             downsample_factor=args.downsample,
             zones=zones,
             progress_bar=progress_bar,
             start_time=start_times[i] if start_times is not None else None,
-            yolo_model=yolo_model,
-            classify_conf=args.classify_conf,
         )
         progress_bar.close()
 
@@ -878,33 +836,25 @@ def main() -> None:
     # video's tracks only being comparable to themselves.
     compute_relative_speeds(all_records)
 
-    if args.reference_entity_id is not None:
-        try:
-            calibrate_absolute_speeds(
-                all_records,
-                reference_entity_id=args.reference_entity_id,
-                reference_speed=args.reference_speed,
-                reference_video_path=args.reference_video,
-            )
-            logger.info(
-                "Calibrated absolute_speed for %d entities using entity_id %d "
-                "at %.2f as the reference.",
-                len(all_records),
-                args.reference_entity_id,
-                args.reference_speed,
-            )
-        except ValueError as e:
-            logger.error("Could not calibrate absolute speeds: %s", e)
-            raise SystemExit(1)
+    # absolute_speed is left unpopulated here - calibrating it against a
+    # known reference vehicle is report_recalibrator.py's job, as a
+    # post-processing step over this script's --report output, so left- and
+    # right-traveling traffic can each be calibrated (and recalibrated,
+    # without re-running video processing) against their own reference
+    # independently.
 
     # Export raw best frames
     logger.info("Saving best frames to %s...", output_folder)
     for record in all_records:
         video_name = record.video_path.stem
         # Append the direction and category suffix so image_occupancyprofiler.py
-        # detects it - the classified entity_type when available, else the
-        # manual --category fallback.
-        category = record.entity_type or args.category
+        # detects it - the yolo-report-sourced entity_type's display name when
+        # available, else the manual --category fallback.
+        category = (
+            CLASS_ID_MAPPING.get(record.entity_type, args.category)
+            if record.entity_type is not None
+            else args.category
+        )
         out_name = f"entity_{record.entity_id}_{record.direction}_{category}.jpg"
         out_path = output_folder / video_name / out_name
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -928,12 +878,9 @@ def main() -> None:
                 "output_dir": str(output_folder),
                 "total_videos_processed": len(video_files),
                 "category": args.category,
-                "classify_model": None if args.no_classify else args.classify_model,
+                "yolo_report": args.yolo_report,
                 "entity_type_filter": args.entity_type,
                 "start_times_file": args.start_times,
-                "reference_entity_id": args.reference_entity_id,
-                "reference_speed": args.reference_speed,
-                "reference_video": args.reference_video,
                 "generated_at": datetime.datetime.now().isoformat(),
             },
             "individual_entities": [
