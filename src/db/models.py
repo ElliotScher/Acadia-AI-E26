@@ -79,7 +79,6 @@ class Image(Base):
     def to_detection_result(self, session: Session) -> DetectionResult:
         return DetectionResult(
             Path(self.path).resolve(),
-            None,
             list(
                 map(
                     lambda i: (
