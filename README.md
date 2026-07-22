@@ -38,8 +38,8 @@ Proceedings*, *39*(1). https://doi.org/10.32473/flairs.39.1.141550
 Eco-Counter. (n.d.). *Counting solutions to understand user flows*. Retrieved
 April 30, 2026, from https://www.eco-counter.com/solutions/counting-solutions
 
-Elek, O., Thomas, M. M., &amp; Forbes, A. (2019). *Learning Patterns in Sample
-Distributions for Monte Carlo Variance Reduction* (arXiv:1906.00124; Version 1).
+Elek, O., Thomas, M. M., &amp; Forbes, A. (2019). *Learning patterns in sample
+distributions for Monte Carlo variance reduction* (arXiv:1906.00124; Version 1).
 arXiv. https://doi.org/10.48550/arXiv.1906.00124
 
 Fleming, D. (2016). As popular Acadia turns 100, there’s no room at the top.
@@ -145,8 +145,8 @@ United States Department of Agriculture Forest Service.
 https://www.fs.usda.gov/rm/pubs/rmrs_gtr056.pdf
 
 Xue, W., Sun, J., Liang, F., Hou, J., Yang, Y., Shang, W., Chen, X., Gradoni,
-G., &amp; Huang, Y. (2025). Jensen–Shannon Divergence Hypothesis Test for
-Determining Reverberation Chamber Field Distribution. *IEEE Transactions on
+G., &amp; Huang, Y. (2025). Jensen–Shannon divergence hypothesis test for
+determining reverberation chamber field distribution. *IEEE Transactions on
 Antennas and Propagation*, *73*(9), 6855–6870.
 https://doi.org/10.1109/TAP.2025.3574921
 
