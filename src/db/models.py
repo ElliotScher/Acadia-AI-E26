@@ -264,6 +264,7 @@ class Entity(Base):
     __mapper_args__ = {"confirm_deleted_rows": False}
     id: Mapped[int] = mapped_column(primary_key=True)
     speed: Mapped[float] = mapped_column(Float(), nullable=True)
+    rawSpeed: Mapped[float] = mapped_column(Float(), nullable=True)
     ebike: Mapped[bool] = mapped_column(Boolean(), nullable=True)
     cluster: Mapped[int] = mapped_column(Integer(), nullable=True)
 
@@ -331,6 +332,7 @@ class Entity(Base):
                 "cluster size",
                 "left/right",
                 "forward/back",
+                "speed"
             ]
 
             writer.writerows([header])
@@ -366,6 +368,7 @@ class Entity(Base):
                             "forward" if firstInstance.direction_fb == 1 else "unknown"
                         )
                     ),
+                    round(entity.speed, 4) if entity.speed is not None else ""
                 ]
 
                 data.append(row)
@@ -591,3 +594,12 @@ SELECT direction_lr FROM instance LIMIT 1
     except:
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_lr INTEGER"))
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_fb INTEGER"))
+
+@event.listens_for(Entity.metadata, "after_create")
+def add_column_if_not_exists(target, connection, **kwargs):
+    try:
+        connection.execute(DDL("""
+SELECT rawSpeed FROM entity LIMIT 1
+"""))
+    except:
+        connection.execute(DDL("ALTER TABLE entity ADD COLUMN rawSpeed FLOAT"))

@@ -8,6 +8,8 @@ from detection.bike_rider_merging import merge_bikes_riders
 
 
 class BikeRiderMergeDialog(QtWidgets.QDialog):
+    finish = QtCore.Signal()
+
     def __init__(self, session: Session, images: list[Image], *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -43,4 +45,5 @@ class BikeRiderMergeDialog(QtWidgets.QDialog):
         for image in self.images:
             merge_bikes_riders(self.session, image, self.threshold.value())
 
+        self.finish.emit()
         self.accept()

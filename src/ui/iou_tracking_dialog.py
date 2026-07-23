@@ -9,6 +9,8 @@ from detection.entity_iou_tracking import entity_iou_tracking
 
 
 class IOUTrackingDialog(QtWidgets.QDialog):
+    finish = QtCore.Signal()
+
     def __init__(self, session: Session, images: list[Image], *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -45,4 +47,5 @@ class IOUTrackingDialog(QtWidgets.QDialog):
             self.session, self.images, dt.timedelta(seconds=self.trackingGap.value())
         )
 
+        self.finish.emit()
         self.accept()

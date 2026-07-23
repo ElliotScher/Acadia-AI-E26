@@ -13,6 +13,8 @@ from detection.pose_direction import Direction, process_single_image
 
 
 class PoseDirectionDialog(QtWidgets.QDialog):
+    finish = QtCore.Signal()
+
     def __init__(self, session: Session, images: list[Image], *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -154,3 +156,5 @@ class PoseDirectionDialog(QtWidgets.QDialog):
                         self.session.add(instance)
 
             self.session.commit()
+
+        self.finish.emit()

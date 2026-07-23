@@ -33,7 +33,7 @@ from detection.image_yolo import (
 
 
 class AnalyzeDialog(QtWidgets.QDialog):
-    finished = QtCore.Signal()
+    finish = QtCore.Signal()
 
     def __init__(
         self,
@@ -224,7 +224,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 continue
 
             image = self.session.scalar(
-                select(Image).where(Image.path == os.path.normpath(r.image_path.absolute()))
+                select(Image).where(
+                    Image.path == os.path.normpath(r.image_path.absolute())
+                )
             )
 
             if not image:
@@ -257,7 +259,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             self.session.add(image)
 
         self.session.commit()
-        self.finished.emit()
+        self.finish.emit()
 
     @QtCore.Slot()
     def finishVideoAnalysis(self, result: list[VideoDetectionResult]):
@@ -272,7 +274,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
 
             frames: dict[int, Image] = dict()
             video = self.session.scalar(
-                select(Video).where(Video.path == os.path.normpath(r.video_path.absolute()))
+                select(Video).where(
+                    Video.path == os.path.normpath(r.video_path.absolute())
+                )
             )
             if not video:
                 logger = logging.Logger("analyze_dialog")
@@ -317,7 +321,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             self.session.add(video)
 
         self.session.commit()
-        self.finished.emit()
+        self.finish.emit()
 
     @staticmethod
     @QtCore.Slot()
@@ -337,5 +341,5 @@ class AnalyzeDialog(QtWidgets.QDialog):
             files,
             video=True,
         )
-        dialog.finished.connect(refresh)
+        dialog.finish.connect(refresh)
         dialog.exec()

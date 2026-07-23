@@ -188,19 +188,6 @@ class ImageTab(QtWidgets.QWidget):
                 self.session.scalars(select(Image).order_by(Image.datetime).distinct())
             )
 
-    @QtCore.Slot()
-    def analyze(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images = self.getImages(filtered)
-
-        dialog = AnalyzeDialog(
-            self.session, list(map(lambda i: (i.id, i.path), images))
-        )
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
     @QtCore.Slot(Image, result=bool)
     def focusImage(self, image: Image) -> bool:
         if image.id not in self.galleryModel.results:
@@ -218,105 +205,6 @@ class ImageTab(QtWidgets.QWidget):
             QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
         )
         return True
-
-    @QtCore.Slot()
-    def analyzePoseDirection(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = PoseDirectionDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def mergeBikes(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = BikeRiderMergeDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def mergeBikes(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = BikeRiderMergeDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def mergeBikes(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = BikeRiderMergeDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def mergeBikes(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = BikeRiderMergeDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def export(self, filtered: bool, path: str):
-        if not hasattr(self, "session"):
-            return
-
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        Image.export_to_csv(self.session, images, path)
 
 
 class ImageGallery(QtWidgets.QListView):

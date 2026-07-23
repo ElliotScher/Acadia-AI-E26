@@ -192,3 +192,35 @@ class DirectionFilter(Filter):
                     else (1 if self.directionFilter.currentIndex() == 3 else 0)
                 )
             )
+
+
+class SpeedFilter(Filter):
+    name = "Speed"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.minFilter = QtWidgets.QSpinBox()
+        self.minFilter.setRange(0, 100)
+        self.minFilter.valueChanged.connect(self.changed)
+        self.thisLayout.insertWidget(0, self.minFilter)
+
+        self.dash = QtWidgets.QLabel("-")
+        self.thisLayout.insertWidget(1, self.dash)
+
+        self.maxFilter = QtWidgets.QSpinBox()
+        self.maxFilter.setRange(0, 100)
+        self.maxFilter.setValue(100)
+        self.maxFilter.valueChanged.connect(self.changed)
+        self.thisLayout.insertWidget(2, self.maxFilter)
+
+        self.thisLayout.insertWidget(3, QtWidgets.QLabel("mph"))
+
+    @QtCore.Slot()
+    def makeFilter(self, query: Select):
+        return query.where(
+            and_(
+                Entity.speed >= self.minFilter.value(),
+                Entity.speed <= self.maxFilter.value(),
+            )
+        )
