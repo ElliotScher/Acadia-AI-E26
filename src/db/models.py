@@ -82,11 +82,16 @@ class Image(Base):
     def to_detection_result(self, session: Session) -> DetectionResult:
         return DetectionResult(
             Path(self.path).resolve(),
-            list(map(lambda i: (
-                Rectangle(i.x, i.y, i.width, i.height),
-                i.entity_id,
-                i.confidence
-            ), self.get_instances(session)))
+            list(
+                map(
+                    lambda i: (
+                        Rectangle(i.x, i.y, i.width, i.height),
+                        i.entity_id,
+                        i.confidence,
+                    ),
+                    self.get_instances(session),
+                )
+            ),
         )
 
     @staticmethod
@@ -185,7 +190,7 @@ class Image(Base):
                     if instance.entity.cluster not in clusters:
                         clusters.append(instance.entity.cluster)
                 clusterCount += len(clusters)
-                
+
             if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
@@ -197,6 +202,7 @@ class Image(Base):
 
     def __repr__(self) -> str:
         return f"Image({self.id})"
+
 
 class Video(Base):
     __tablename__ = "video"
@@ -216,7 +222,7 @@ class Video(Base):
             self.time: Never = dt.time(
                 self.datetime.hour, self.datetime.minute, self.datetime.second
             )
-    
+
     @staticmethod
     def import_from_dir(session: Session, dir: str):
         for root, _, files in os.walk(dir):
@@ -246,14 +252,16 @@ class Video(Base):
                     path=path,
                     datetime=dt.datetime.fromtimestamp(os.path.getmtime(path)),
                     frames=int(frames),
-                    fps=int(fps)
+                    fps=int(fps),
                 )
-                
+
                 session.add(video)
         session.commit()
 
+
 class Entity(Base):
     __tablename__ = "entity"
+    __mapper_args__ = {"confirm_deleted_rows": False}
     id: Mapped[int] = mapped_column(primary_key=True)
     speed: Mapped[float] = mapped_column(Float(), nullable=True)
     ebike: Mapped[bool] = mapped_column(Boolean(), nullable=True)
@@ -321,6 +329,8 @@ class Entity(Base):
                 "dwell time",
                 "type",
                 "cluster size",
+                "left/right",
+                "forward/back",
             ]
 
             writer.writerows([header])
@@ -329,6 +339,7 @@ class Entity(Base):
             for entity in entities:
                 earliestImage = entity.get_earliest_image(session)
                 latestImage = entity.get_latest_image(session)
+                firstInstance = entity.get_instances(session)[0]
                 row = [
                     earliestImage.datetime.strftime("%Y-%m-%d"),
                     earliestImage.datetime.strftime("%H:%M:%S"),
@@ -342,6 +353,18 @@ class Entity(Base):
                         len(entity.get_entities_in_cluster(session))
                         if entity.cluster
                         else 0
+                    ),
+                    (
+                        "left"
+                        if firstInstance.direction_lr == -1
+                        else ("right" if firstInstance.direction_lr == 1 else "unknown")
+                    ),
+                    (
+                        "back"
+                        if firstInstance.direction_fb == -1
+                        else (
+                            "forward" if firstInstance.direction_fb == 1 else "unknown"
+                        )
                     ),
                 ]
 
@@ -419,6 +442,7 @@ class Entity(Base):
 
 class Instance(Base):
     __tablename__ = "instance"
+    __mapper_args__ = {"confirm_deleted_rows": False}
     image_id: Mapped[int] = mapped_column(
         ForeignKey(Image.id, ondelete="cascade", onupdate="restrict"), primary_key=True
     )
@@ -452,7 +476,13 @@ class Instance(Base):
             0, min(ay2, by2) - max(ay1, by1)
         )
         union = (self.width * self.height) + (other.width * other.height) - intersection
+
+        if union <= 0:
+            return 0
         return intersection / union
+
+    def center(self) -> tuple[int, int]:
+        return (self.x + int(self.width / 2), self.y + int(self.height / 2))
 
     def __repr__(self) -> str:
         return f"Instance({self.image_id}, {self.entity_id})"
