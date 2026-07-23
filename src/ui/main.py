@@ -11,6 +11,7 @@ from image_tab import ImageTab
 from entity_tab import EntitiesTab
 from export_dialog import ExportDialog, ExportOptions
 from cluster_dialog import ClusterDialog
+from iou_tracking_dialog import IOUTrackingDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -18,7 +19,6 @@ import utility.parallel as upl
 from db import get_db
 from db.models import Entity, Image, Video
 from ui.analyze_dialog import AnalyzeDialog
-from detection.bike_rider_merging import merge_bikes_riders
 
 
 class Root(QtWidgets.QMainWindow):
@@ -81,6 +81,9 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
         aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
         mAnalyze.addAction(aAnalyzeClustersFiltered)
+        aAnalyzeClustersAll = QtGui.QAction("Analyze Filtered Clusters", self)
+        aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
+        mAnalyze.addAction(aAnalyzeClustersAll)
         aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
         aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
         aMergeBikesFiltered = QtGui.QAction("Merge Filtered Bikes and Riders", self)
@@ -89,6 +92,9 @@ class Root(QtWidgets.QMainWindow):
         aMergeBikesAll = QtGui.QAction("Merge All Bikes and Riders", self)
         aMergeBikesAll.triggered.connect(self.analyzeMergeBikesAll)
         mAnalyze.addAction(aMergeBikesAll)
+        aIOUTracking = QtGui.QAction("Run IOU Tracking", self)
+        aIOUTracking.triggered.connect(self.runIouTracking)
+        mAnalyze.addAction(aIOUTracking)
 
         aAnalyzePoseDirection = QtGui.QAction(
             "Analyze Filtered For Direction From Poses", self
@@ -188,6 +194,12 @@ class Root(QtWidgets.QMainWindow):
     def analyzeAllPoseDirection(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzePoseDirection(False)
+
+    @QtCore.Slot()
+    def runIouTracking(self):
+        if hasattr(self, "session"):
+            dialog = IOUTrackingDialog(self.session, self.imageTab.getImages(False))
+            dialog.exec()
 
     def warnDialog(self, msg: str):
         d = QtWidgets.QMessageBox()

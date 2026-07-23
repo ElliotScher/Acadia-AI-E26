@@ -346,11 +346,20 @@ class ImageInfo(QtWidgets.QGroupBox):
 
         for i in range(len(instances)):
             instance = instances[i]
+            directions: list[str] = []
+            if instance.direction_lr == -1:
+                directions.append("left")
+            elif instance.direction_lr == 1:
+                directions.append("right")
+            if instance.direction_fb == -1:
+                directions.append("back")
+            elif instance.direction_fb == 1:
+                directions.append("forward")
             widget = QtWidgets.QWidget(self.entities)
             widget.setFixedHeight(40)
             layout = QtWidgets.QHBoxLayout(widget)
             tlabel = QtWidgets.QLabel(
-                f"<font color={colors[i % len(colors)]}>{CLASS_ID_MAPPING[instance.type_id]}</font>",
+                f"<font color={colors[i % len(colors)]}>{CLASS_ID_MAPPING[instance.type_id] + ((' (' + ', '.join(directions) + ')') if len(directions) > 0 else '')}</font>",
                 widget,
             )
             layout.addWidget(tlabel)

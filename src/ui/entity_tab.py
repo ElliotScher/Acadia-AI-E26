@@ -13,27 +13,8 @@ from filters.entity import (
     EntityTimeFilter,
     EntityTypeFilter,
     ClusterSizeFilter,
-)
-
-colors = (
-    "#00ff00",
-    "#ff00ff",
-    "#00ffff",
-    "#ffff00",
-    "#ff0000",
-    "#0000ff",
-    "#ff8800",
-    "#8800ff",
-    "#0088ff",
-    "#008800",
-    "#888888",
-    "#ff0088",
-    "#ff8888",
-    "#88ff88",
-    "#8888ff",
-    "#ffff88",
-    "#ff88ff",
-    "#88ffff",
+    CountConfidenceFilter,
+    DirectionFilter,
 )
 
 
@@ -49,7 +30,14 @@ class EntitiesTab(QtWidgets.QWidget):
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
         self.filters = Filters(
-            (EntityDateFilter, EntityTimeFilter, EntityTypeFilter, ClusterSizeFilter)
+            (
+                EntityDateFilter,
+                EntityTimeFilter,
+                EntityTypeFilter,
+                ClusterSizeFilter,
+                CountConfidenceFilter,
+                DirectionFilter,
+            )
         )
         gallerySideLayout.addWidget(self.filters)
         self.filters.changed.connect(self.refreshGallery)
@@ -285,8 +273,20 @@ class EntityInfo(QtWidgets.QGroupBox):
                 )
             self.images.setItemWidget(item, widget)
         if len(self.instances) > 0 and self.instances[0].type_id in CLASS_ID_MAPPING:
+            directions: list[str] = []
+            if self.instances[0].direction_lr == -1:
+                directions.append("left")
+            elif self.instances[0].direction_lr == 1:
+                directions.append("right")
+            if self.instances[0].direction_fb == -1:
+                directions.append("back")
+            elif self.instances[0].direction_fb == 1:
+                directions.append("forward")
+
             self.typeLabel.setText(
-                CLASS_ID_MAPPING[self.instances[0].type_id].title() + " seen in:"
+                CLASS_ID_MAPPING[self.instances[0].type_id].title()
+                + ((" (" + ", ".join(directions) + ")") if len(directions) > 0 else "")
+                + " seen in:"
             )
 
         if entity.cluster is not None:
