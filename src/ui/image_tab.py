@@ -305,6 +305,57 @@ class ImageTab(QtWidgets.QWidget):
         dialog.exec()
 
     @QtCore.Slot()
+    def mergeBikes(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        images: list[Image] = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = BikeRiderMergeDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
+    def mergeBikes(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        images: list[Image] = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = BikeRiderMergeDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
+    def mergeBikes(self, filtered: bool):
+        if not hasattr(self, "session"):
+            return
+
+        images: list[Image] = []
+        if filtered:
+            images = list(map(self.galleryModel.getById, self.galleryModel.results))
+        else:
+            images = list(
+                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
+            )
+
+        dialog = BikeRiderMergeDialog(self.session, images)
+        dialog.accepted.connect(self.refreshGallery)
+        dialog.exec()
+
+    @QtCore.Slot()
     def export(self, filtered: bool, path: str):
         if not hasattr(self, "session"):
             return

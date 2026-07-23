@@ -174,14 +174,6 @@ class Root(QtWidgets.QMainWindow):
         self.imageTab.mergeBikes(False)
 
     @QtCore.Slot()
-
-    def analyzeMergeBikesFiltered(self):
-        self.imageTab.mergeBikes(True)
-
-    @QtCore.Slot()
-    def analyzeMergeBikesAll(self):
-        self.imageTab.mergeBikes(False)
-
     def analyzeClustersFiltered(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.doAnalyzeClusters(self.imageTab.getImages(True))
@@ -200,7 +192,7 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
-    
+
     def analyzePoseDirection(self):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.analyzePoseDirection(True)
