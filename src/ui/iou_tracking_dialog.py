@@ -1,10 +1,9 @@
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-import math
 import datetime as dt
 
-from db.models import Image, Instance
+from PySide6 import QtCore, QtWidgets
+from sqlalchemy.orm import Session
+
+from db.models import Image
 from detection.entity_iou_tracking import entity_iou_tracking
 
 

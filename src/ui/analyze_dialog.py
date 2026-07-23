@@ -1,27 +1,27 @@
+import datetime as dt
 import functools
-from typing import Callable
-from setuptools.config.setupcfg import Target
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy.orm import Session
-from sqlalchemy import select
 import logging
 import math
-from pathlib import Path
 import os
-import cv2
-import datetime as dt
+from pathlib import Path
+from typing import Callable
 
+import cv2
+from PySide6 import QtCore, QtWidgets
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+import utility.parallel as upl
 from db.models import Image, Instance, Entity, Video
 from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
+from detection.image_yolo import (
+    DetectionResult,
+    process_images,
+)
 from detection.video_yolo import (
     process_videos,
     open_video_capture,
     DetectionResult as VideoDetectionResult,
-)
-import utility.parallel as upl
-from detection.image_yolo import (
-    DetectionResult,
-    process_images,
 )
 
 

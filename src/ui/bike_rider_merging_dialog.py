@@ -1,9 +1,7 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 from sqlalchemy.orm import Session
-from sqlalchemy import select
-import math
 
-from db.models import Image, Instance
+from db.models import Image
 from detection.bike_rider_merging import merge_bikes_riders
 
 

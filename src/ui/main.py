@@ -5,11 +5,11 @@ import platform
 import subprocess
 import sys
 
+from analyze_dialog import AnalyzeDialog
 from cluster_dialog import ClusterDialog
 from entity_tab import EntitiesTab
 from export_dialog import ExportDialog, ExportOptions
 from image_tab import ImageTab
-from cluster_dialog import ClusterDialog
 from iou_tracking_dialog import IOUTrackingDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine
@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 import utility.parallel as upl
 from db import get_db
 from db.models import Entity, Image, Video
-from ui.analyze_dialog import AnalyzeDialog
 
 
 class Root(QtWidgets.QMainWindow):
