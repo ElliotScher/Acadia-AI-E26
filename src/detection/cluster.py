@@ -9,7 +9,7 @@ import threading
 from threading import Thread
 import torch
 import logging
-from typing import Optional
+from typing import Optional, List
 
 from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
 from detection.image_yolo import (
@@ -167,7 +167,7 @@ def process_images(
     progress_bar: Optional[tqdm | ProgressTracker] = None,
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
-    target_classes: Optional[list[int]] = None,
+    target_classes: Optional[List[int]] = None,
     max_distance: int = 60,
     max_size_ratio: float = 2.5,
 ) -> list[Cluster]:

@@ -30,6 +30,9 @@ from sqlalchemy.orm import (
 
 from detection.classes import CLASS_ID_MAPPING
 from detection.direction.pedestrian_direction import process_single_image
+from detection.image_yolo import DetectionResult
+from utility.geometryutils import Rectangle
+
 
 class Base(DeclarativeBase):
     pass
