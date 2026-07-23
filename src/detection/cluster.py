@@ -1,85 +1,195 @@
-"""
-YOLO Image Object Detection Utility
-
-Processes images in an input directory using YOLO, maps target categories (e.g., bus/truck to car).
-"""
-
-import argparse
-import datetime
-import json
-import logging
-import sys
-import threading
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
-from detection.classes import CLASS_ID_MAPPING
-from utility.parallel import ProgressTracker
-
 import cv2
-import torch
-from tqdm import tqdm
 from ultralytics import YOLO
+import argparse
+import sys
+from dataclasses import dataclass
+from tqdm import tqdm
+import threading
+from threading import Thread
+import torch
+import logging
+from typing import Optional
 
+from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
+from detection.image_yolo import (
+    DetectionResult,
+    load_model,
+)
 from utility.geometryutils import Rectangle
-
-# COCO classes: 0=person, 2=car, 5=bus, 7=truck
-DEFAULT_TARGET_CLASSES = [0, 2, 5, 7]
+from utility.parallel import ProgressTracker
 
 # Initialize Logger
 logger = logging.getLogger("yolo_detection")
 
-
 @dataclass
-class DetectionResult:
+class Cluster:
     """
-    Holds the YOLO detection results for a single image.
-
-    Args:
-        image_path (Path): Path to the source image.
-        boxes (List[Tuple[Rectangle, int, float]]): List of (rectangle, id, confidence) detections.
+    Struct representing a cluster detected in an image.
+    Holds the image coordinates of the bounding box, the number of contained
+    instances of each COCO class, and a list of Detection structs
+    contained in the cluster.
     """
 
-    image_path: Path
-    boxes: List[Tuple[Rectangle, int, float]]  # List of (rectangle, id, confidence)
+    box: tuple[int, int, int, int]  # (x1, y1, x2, y2) in image coordinates,
+    counts: dict[int, int]  # number of instances of each COCO class
+    detections: DetectionResult  # DetectionResults in the cluster
 
-def load_model(model_name: str) -> YOLO:
+Detection = tuple[Rectangle, int, float]
+
+# Checks whether two boxes are within distance pixels of each other.
+def _boxes_close(a: Detection, b: Detection, distance: int):
+    ax1, ay1, ax2, ay2 = a[0].x, a[0].y, a[0].x + a[0].w, a[0].y + a[0].y
+    bx1, by1, bx2, by2 = b[0].x, b[0].y, b[0].x + b[0].w, b[0].y + b[0].y
+
+    ax1e, ay1e = ax1 - distance, ay1 - distance
+    ax2e, ay2e = ax2 + distance, ay2 + distance
+
+    noOverlap = bx2 < ax1e or bx1 > ax2e or by2 < ay1e or by1 > ay2e
+    return not noOverlap
+
+
+# Checks whether two boxes are similar enough in SIZE to be considered
+# at roughly the same distance from the camera. Uses box area; a person
+# far away has a much smaller box area than a person standing close up.
+def _similar_size(a: Detection, b: Detection, maxRatio: float):
+    aArea = a[0].w * a[0].h
+    bArea = b[0].w * b[0].h
+
+    if aArea <= 0 or bArea <= 0:
+        return False
+
+    ratio = max(aArea, bArea) / min(aArea, bArea)
+    return ratio <= maxRatio
+
+
+def process_clusters(
+    detectionResults: DetectionResult, maxDistance: int, maxSizeRatio: float
+) -> list[Cluster]:
+    detections = detectionResults.boxes
+    n: int = len(detections)
+    parent: list[int] = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int):
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    # boxes only join the same cluster if they're both close together
+    # AND roughly the same size -- proximity alone isn't enough
+    for i in range(n):
+        for j in range(i + 1, n):
+            if not _boxes_close(detections[i], detections[j], maxDistance):
+                continue
+            if not _similar_size(detections[i], detections[j], maxSizeRatio):
+                continue
+            union(i, j)
+
+    group: dict[int, list[int]] = {}
+    for i in range(n):
+        root = find(i)
+        group.setdefault(root, []).append(i)
+
+    clusters: list[Cluster] = []
+    for idxs in group.values():
+        x1 = min(detections[i][0].x for i in idxs)
+        y1 = min(detections[i][0].y for i in idxs)
+        x2 = max((detections[i][0].x + detections[i][0].w) for i in idxs)
+        y2 = max((detections[i][0].y + detections[i][0].h) for i in idxs)
+
+        classCounts: dict[int, int] = {}
+        for i in idxs:
+            cls_id = detections[i][1]
+            classCounts[cls_id] = classCounts.get(cls_id, 0) + 1
+
+        clusters.append(
+            Cluster((x1, y1, x2, y2), classCounts, DetectionResult(
+                detectionResults.image_path,
+                list(detections[i] for i in idxs)
+            ))
+        )
+    return clusters
+
+
+def save_annotated_results(
+    img_path: Path, clusters: list[Cluster], input_folder: Path, output_folder: Path
+) -> None:
     """
-    Loads and returns a YOLO model from the given path or name.
-
-    Args:
-        model_name (str): YOLO weights name.
+    Saves the annotated copies of the image (or the original if no detections)
+    to the output folder, preserving the input directory structure.
     """
-    return YOLO(model_name)
+    image = cv2.imread(str(img_path))
+    if image is None:
+        return
 
+    out_path_base = output_folder / img_path.relative_to(input_folder)
+    out_path_base.parent.mkdir(parents=True, exist_ok=True)
+
+    if len(clusters) == 0:
+        cv2.imwrite(str(out_path_base), image)
+    else:
+        for i, cluster in enumerate(clusters):
+            x1, y1, x2, y2 = cluster.box
+            image_copy = image.copy()
+            cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 0), thickness=5)
+            text = ", ".join(
+                f"{CLASS_ID_MAPPING[cls_id]} x{count}"
+                for cls_id, count in cluster.counts.items()
+            )
+            cv2.putText(
+                image_copy,
+                text,
+                (x1, max(y1 - 8, 0)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2,
+            )
+
+            filename_text = "-".join(
+                f"{CLASS_ID_MAPPING[cls_id]}-x{count}"
+                for cls_id, count in cluster.counts.items()
+            )
+            out_path = out_path_base.with_name(
+                f"{out_path_base.stem}-{i}-{filename_text}{out_path_base.suffix}"
+            )
+            cv2.imwrite(str(out_path), image_copy)
 
 def process_images(
-    img_paths: List[Path],
+    img_paths: list[Path],
     model_name: str,
     progress_bar: Optional[tqdm | ProgressTracker] = None,
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
-    target_classes: Optional[List[int]] = None,
-) -> List[DetectionResult]:
+    target_classes: Optional[list[int]] = None,
+    max_distance: int = 60,
+    max_size_ratio: float = 2.5,
+) -> list[Cluster]:
     """
     Processes a list of image paths using YOLO and extracts detection boxes and images.
     Does not write anything to disk.
 
     Args:
-        img_paths (List[Path]): List of image paths to process.
+        img_paths (list[Path]): List of image paths to process.
         model_name (str): YOLO weights name or path.
         progress_bar (Optional[tqdm | ProgressTracker]): Thread-safe progress bar instance.
         inclusion_region (Optional[Rectangle]): Optional spatial filter region.
         conf_threshold (float): Minimum confidence threshold for detections.
-        target_classes (Optional[List[int]]): List of COCO class IDs to filter.
+        target_classes (Optional[list[int]]): List of COCO class IDs to filter.
 
     Returns:
-        List[DetectionResult]: List of detection results per image.
+        list[DetectionResult]: List of detection results per image.
     """
     classes_list = (
-        target_classes if target_classes is not None else DEFAULT_TARGET_CLASSES
+        target_classes if target_classes is not None else TARGET_CLASSES
     )
-    results_list: List[DetectionResult] = []
+    results_list: list[Cluster] = []
 
     try:
         thread_model = YOLO(model_name)
@@ -109,7 +219,7 @@ def process_images(
                     progress_bar.update(1)
                 continue
 
-            boxes_found: List[Tuple[Rectangle, int, float]] = []
+            boxes_found: list[tuple[Rectangle, int, float]] = []
             for r in results:
                 for box in r.boxes: # type:ignore
                     cls = int(box.cls[0])
@@ -130,8 +240,12 @@ def process_images(
                     rect = Rectangle(x=x1, y=y1, w=w, h=h)
                     boxes_found.append((rect, cls, conf))
 
-            results_list.append(
-                DetectionResult(image_path=img_path, boxes=boxes_found)
+            results_list.extend(
+                process_clusters(
+                    DetectionResult(image_path=img_path, boxes=boxes_found),
+                    max_distance,
+                    max_size_ratio
+                )
             )
 
         except Exception as e:
@@ -144,69 +258,76 @@ def process_images(
 
 
 def save_annotated_images(
-    results: List[DetectionResult],
+    results: list[Cluster],
     input_folder: Path,
     output_folder: Path,
 ) -> None:
     """
-    Saves detection results to disk with annotations.
+    Saves cluster results to disk with annotations.
 
     Args:
-        results (List[DetectionResult]): YOLO detection outputs.
+        results (list[Cluster]): YOLO cluster outputs.
         input_folder (Path): Source directory for relative path resolution.
         output_folder (Path): Destination directory for saved images.
     """
+    paths: list[Path] = []
+
     for res in results:
-        img_path = res.image_path
-        image = cv2.imread(str(img_path))
-        boxes = res.boxes
+        img_path = res.detections.image_path
+        paths.append(img_path)
+        image = cv2.imread(str(res.detections.image_path))
 
         out_path_base = output_folder / img_path.relative_to(input_folder)
         out_path_base.parent.mkdir(parents=True, exist_ok=True)
 
         if image is not None:
-            if not boxes:
-                cv2.imwrite(str(out_path_base), image)
-                logger.debug("Saved original image with no detections: %s", out_path_base)
-            else:
-                for i, (rect, label, conf) in enumerate(boxes):
-                    image_copy = image.copy()
-                    cv2.rectangle(
-                        image_copy,
-                        (rect.x, rect.y),
-                        (rect.x + rect.w, rect.y + rect.h),
-                        (0, 255, 0),
-                        thickness=5,
-                    )
-                    out_path = out_path_base.with_name(
-                        f"{out_path_base.stem}-{i}-{label}{out_path_base.suffix}"
-                    )
-                    cv2.imwrite(str(out_path), image_copy)
-                    logger.debug("Saved single-annotated detection copy: %s", out_path)
+            image_copy = image.copy()
+            cv2.rectangle(
+                image_copy,
+                (res.box[0], res.box[1]),
+                (res.box[2], res.box[3]),
+                (0, 255, 0),
+                thickness=5,
+            )
+            for i, (rect, label, conf) in enumerate(res.detections.boxes):
+                cv2.rectangle(
+                    image_copy,
+                    (rect.x, rect.y),
+                    (rect.x + rect.w, rect.y + rect.h),
+                    (0, 0, 255),
+                    thickness=3,
+                )
+            out_path = out_path_base.with_name(
+                f"{out_path_base.stem}-{len(res.detections.boxes)}x-{paths.count(img_path)}{out_path_base.suffix}"
+            )
+            cv2.imwrite(str(out_path), image_copy)
+            logger.debug("Saved single-annotated detection copy: %s", out_path)
 
 
 def thread_worker(
-    img_paths: List[Path],
+    img_paths: list[Path],
     model_name: str,
     progress_bar: Optional[tqdm | ProgressTracker],
-    results_list: List[DetectionResult],
+    results_list: list[Cluster],
     lock: threading.Lock,
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
-    target_classes: Optional[List[int]] = None,
+    target_classes: Optional[list[int]] = None,
+    max_distance: int = 60,
+    max_size_ratio: float = 2.5,
 ) -> None:
     """
     Thread worker for parallel YOLO inference.
 
     Args:
-        img_paths (List[Path]): Images assigned to this thread.
+        img_paths (list[Path]): Images assigned to this thread.
         model_name (str): YOLO model weights or path.
         progress_bar (Optional[tqdm | ProgressTracker]): Shared progress bar instance.
-        results_list (List[DetectionResult]): Shared results accumulator.
+        results_list (list[DetectionResult]): Shared results accumulator.
         lock (threading.Lock): Thread lock for safe writes.
         inclusion_region (Optional[Rectangle]): Optional spatial filter.
         conf_threshold (float): Detection confidence threshold.
-        target_classes (Optional[List[int]]): COCO class filter list.
+        target_classes (Optional[list[int]]): COCO class filter list.
     """
     thread_results = process_images(
         img_paths=img_paths,
@@ -215,6 +336,8 @@ def thread_worker(
         inclusion_region=inclusion_region,
         conf_threshold=conf_threshold,
         target_classes=target_classes,
+        max_distance=max_distance,
+        max_size_ratio=max_size_ratio
     )
     with lock:
         results_list.extend(thread_results)
@@ -253,23 +376,40 @@ def main() -> None:
         help="Comma-separated list of COCO category IDs to detect (e.g., '0,2,5,7').",
     )
     parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Do not save annotated images to the output directory.",
+    )
+    parser.add_argument(
         "--inclusion-region",
         type=str,
         default=None,
         help="Inclusion region as 'x,y,w,h' in pixels (default: None).",
     )
     parser.add_argument(
-        "-r",
-        "--report",
-        type=str,
-        default=None,
-        help="Path to save the summary report in JSON format.",
+        "--max-distance",
+        type=int,
+        default=60,
+        help="Maximum distance in pixels between two instances to consider them part of the same cluster.",
     )
     parser.add_argument(
-        "--no-save",
-        action="store_true",
-        help="Do not save annotated images.",
+        "--max-ratio",
+        type=float,
+        default=2.5,
+        help="Maximum ratio between the sizes of two instances to consider them part of the same cluster.",
     )
+    args = parser.parse_args()
+
+    input_folder = Path(args.input_dir).resolve()
+    output_folder = Path(args.output_dir).resolve()
+
+    if not input_folder.is_dir():
+        print(
+            f"Error: Input directory '{input_folder}' does not exist or is not a directory.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     from utility.loggingutils import setup_logging_and_paths
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
@@ -287,7 +427,7 @@ def main() -> None:
 
     logger.info("Allocating %d CPU thread(s) to YOLO detections...", thread_count)
 
-    target_classes = DEFAULT_TARGET_CLASSES
+    target_classes = TARGET_CLASSES
     if args.classes:
         try:
             target_classes = [int(x.strip()) for x in args.classes.split(",")]
@@ -317,7 +457,7 @@ def main() -> None:
             )
             sys.exit(1)
 
-    total_counts: Dict[str, int] = {}
+    total_counts: dict[str, int] = {}
     try:
         model = YOLO(args.model)
         for cls in target_classes:
@@ -342,11 +482,12 @@ def main() -> None:
         logger.warning("No matching images found in the input directory.")
         return
 
+
     progress_bar = tqdm(total=len(all_images), desc="Progress", unit="image")
 
     chunk_size = max(1, len(all_images) // thread_count)
     threads = []
-    all_results: List[DetectionResult] = []
+    all_results: list[Cluster] = []
     lock = threading.Lock()
 
     for i in range(thread_count):
@@ -368,6 +509,8 @@ def main() -> None:
                 "inclusion_region": inclusion_region,
                 "conf_threshold": args.conf,
                 "target_classes": target_classes,
+                "max_distance": args.max_distance,
+                "max_size_ratio": args.max_ratio
             },
         )
         threads.append(thread)
@@ -383,52 +526,6 @@ def main() -> None:
         save_annotated_images(all_results, input_folder, output_folder)
     else:
         logger.info("Skipping saving annotated images as requested.")
-
-    detection_details: Dict[str, List[Dict[str, Union[List[int], float]]]] = {}
-    for res in all_results:
-        relative_key = str(res.image_path.relative_to(input_folder))
-        file_detections = []
-        for rect, coco_id, conf in res.boxes:
-            label = CLASS_ID_MAPPING[coco_id]
-            if label not in total_counts:
-                total_counts[label] = 0
-            total_counts[label] += 1
-
-            file_detections.append(
-                {
-                    "box": [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h],
-                    "label": coco_id,
-                    "confidence": conf,
-                }
-            )
-        detection_details[relative_key] = file_detections
-
-    print("\n--- Summary ---")
-    for category, count in total_counts.items():
-        print(f"Total {category} detected: {count}")
-    print("YOLO processing complete!\n")
-
-    if args.report:
-        logger.info("Generating detection report at %s...", args.report)
-        report_data = {
-            "metadata": {
-                "input_dir": str(input_folder),
-                "output_dir": str(output_folder),
-                "model_weights": args.model,
-                "confidence_threshold": args.conf,
-                "target_classes": target_classes,
-                "total_images_processed": len(all_images),
-                "generated_at": datetime.datetime.now().isoformat(),
-            },
-            "statistics": total_counts,
-            "detections": detection_details,
-        }
-
-        try:
-            with open(args.report, "w") as f:
-                json.dump(report_data, f, indent=4)
-        except Exception as e:
-            logger.error("Failed to save report to %s: %s", args.report, e)
 
 
 if __name__ == "__main__":

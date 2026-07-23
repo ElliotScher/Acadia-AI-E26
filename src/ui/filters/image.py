@@ -1,7 +1,8 @@
 from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
-from sqlalchemy import Select, and_, func
-from db.models import Image, Instance
+from sqlalchemy import Select, and_, func, distinct
+from db.models import Image, Instance, Entity
+from db.models import Image, Instance, Entity
 from detection.classes import CLASS_ID_MAPPING
 from filters import Filter, DateFilter, TimeFilter
 
@@ -16,9 +17,7 @@ class AnalyzedFilter(Filter):
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
-        return query.where(
-            Image.analyzed == True
-        )  # this needs to be this way, it cannot be just Image.analyzed
+        return query.where(Image.analyzed == True)  # noqa
 
 
 class NotAnalyzedFilter(Filter):
@@ -31,9 +30,7 @@ class NotAnalyzedFilter(Filter):
 
     @QtCore.Slot()
     def makeFilter(self, query: Select):
-        return query.where(
-            Image.analyzed == False
-        )  # this needs to be this way, it cannot be just (not Image.analyzed)
+        return query.where(Image.analyzed == False)  # noqa
 
 
 class ImageTimeFilter(TimeFilter):
@@ -200,5 +197,41 @@ class NoEntityFilter(Filter):
             .having(
                 func.coalesce(func.max(Instance.confidence), 0)
                 <= self.maxConfidence.value()
+            )
+        )
+
+
+class ClusterCountFilter(Filter):
+    name = "Cluster Count"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.minFilter = QtWidgets.QSpinBox()
+        self.minFilter.setRange(1, 100)
+        self.minFilter.valueChanged.connect(self.changed)
+        self.thisLayout.insertWidget(0, self.minFilter)
+
+        self.dash = QtWidgets.QLabel("-")
+        self.thisLayout.insertWidget(1, self.dash)
+
+        self.maxFilter = QtWidgets.QSpinBox()
+        self.maxFilter.setRange(1, 100)
+        self.maxFilter.setValue(100)
+        self.maxFilter.valueChanged.connect(self.changed)
+        self.thisLayout.insertWidget(2, self.maxFilter)
+
+        self.thisLayout.insertWidget(3, QtWidgets.QLabel("Clusters"))
+
+    @QtCore.Slot()
+    def makeFilter(self, query: Select):
+        return (
+            query.join(Instance, Instance.image_id == Image.id)
+            .join(Entity, Entity.id == Instance.entity_id)
+            .group_by(Image.id)
+            .having(
+                and_(
+                    func.count(distinct(Entity.cluster)).between(self.minFilter.value(), self.maxFilter.value())
+                )
             )
         )

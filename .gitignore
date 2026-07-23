@@ -38,6 +38,7 @@ app.*.map.json
 .env
 venv
 *.jpg
+*.png
 .DS_Store
 
 # OCR test fixtures needed by the test suite (tracked via Git LFS)

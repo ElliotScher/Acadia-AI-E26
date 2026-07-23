@@ -10,7 +10,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.32.0",
-    "python-dotenv>=1.0.0",
     "ultralytics>=8.0.0",
     "opencv-python>=4.0.0",
     "opencv-contrib-python>=5.0.0.93",
@@ -19,8 +18,6 @@ dependencies = [
     "pyside6>=6.11.1",
     "black>=26.5.1",
     "fast-plate-ocr[onnx]>=1.1.0",
-    "mediapipe>=0.10.35",
-    "av>=17.1.0",
     "matplotlib>=3.10.0",
     "sqlalchemy>=2.0.51",
     "pytest>=9.1.1",
