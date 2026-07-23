@@ -203,6 +203,7 @@ class Image(Base):
     def __repr__(self) -> str:
         return f"Image({self.id})"
 
+
 class Video(Base):
     __tablename__ = "video"
     id: Mapped[int] = mapped_column(primary_key=True)

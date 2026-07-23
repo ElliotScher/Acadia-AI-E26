@@ -20,8 +20,6 @@ from db import get_db
 from db.models import Entity, Image, Video
 from ui.analyze_dialog import AnalyzeDialog
 
-from detection.bike_rider_merging import merge_bikes_riders
-
 
 class Root(QtWidgets.QMainWindow):
     db: Engine
@@ -91,6 +89,9 @@ class Root(QtWidgets.QMainWindow):
         aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
         aAnalyzeClustersFiltered.triggered.connect(self.analyzeClustersFiltered)
         mAnalyze.addAction(aAnalyzeClustersFiltered)
+        aAnalyzeClustersAll = QtGui.QAction("Analyze Filtered Clusters", self)
+        aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
+        mAnalyze.addAction(aAnalyzeClustersAll)
         aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
         aAnalyzeClustersAll.triggered.connect(self.analyzeClustersAll)
         mAnalyze.addAction(aAnalyzeClustersAll)
