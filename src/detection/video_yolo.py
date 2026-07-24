@@ -81,6 +81,7 @@ def _frame_worker(
     device: str = "cpu",
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
+    vehicle_merge: bool = True
 ) -> None:
     """
     Worker thread that pulls frames from the queue, runs YOLO, and records detections.
@@ -103,6 +104,7 @@ def _frame_worker(
         run_base_model (bool): Whether to run the general-purpose COCO model at all. False
             when the caller only requested license plate detection, so no COCO classes
             (person/car/etc.) are detected or drawn. Defaults to True.
+        vehicle_merge (bool): Whether to merge vehicles such as trucks, busses, and cars into the same ID
     """
     thread_model = None
     if run_base_model:
@@ -170,7 +172,8 @@ def _frame_worker(
 
                         conf = float(box.conf[0])
                         rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        merged_cls = merge_vehicle_class_id(cls)
+                        if vehicle_merge: merged_cls = merge_vehicle_class_id(cls)
+                        else: merged_cls = cls
                         label = CLASS_ID_MAPPING.get(merged_cls, str(merged_cls))
                         boxes_found.append(
                             (frame_idx, rect, merged_cls, conf, label)
@@ -224,6 +227,7 @@ def process_videos(
     threads: int = 1,
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
+    vehicle_merge: bool = True,
 ) -> List[DetectionResult]:
     """
     Processes a list of video paths using YOLO and extracts detection boxes.
@@ -241,7 +245,7 @@ def process_videos(
             trained specifically for license plate detection. When provided, detections from
             this model are included in the results labeled "license_plate". Defaults to None.
         run_base_model (bool): Whether to run the general-purpose COCO model at all. Defaults to True.
-
+        vehicle_merge (bool): Whether to merge vehicles such as trucks, busses, and cars into the same ID
     Returns:
         List[DetectionResult]: List of detection results per video.
     """
@@ -284,6 +288,7 @@ def process_videos(
                 device,
                 plate_model_name,
                 run_base_model,
+                vehicle_merge
             ),
         )
         t.daemon = True
@@ -540,6 +545,12 @@ def main() -> None:
         "model must be supplied.",
     )
     parser.add_argument(
+        "--merge",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Whether to merge vehicles such as trucks, busses, and cars into the same ID"
+    )
+    parser.add_argument(
         "-r",
         "--report",
         type=str,
@@ -629,7 +640,8 @@ def main() -> None:
             model = YOLO(args.model)
             for cls in target_classes:
                 if cls in model.names:
-                    merged_cls = merge_vehicle_class_id(cls)
+                    if args.merge: merged_cls = merge_vehicle_class_id(cls)
+                    else: merged_cls = cls
                     label = CLASS_ID_MAPPING.get(merged_cls, model.names[cls])
                     total_counts[label] = 0
                 else:
@@ -680,6 +692,7 @@ def main() -> None:
         threads=thread_count,
         plate_model_name=plate_model_name,
         run_base_model=run_base_model,
+        vehicle_merge=args.merge,
     )
 
     progress_bar.close()
