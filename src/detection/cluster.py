@@ -9,7 +9,7 @@ import threading
 from threading import Thread
 import torch
 import logging
-from typing import Optional
+from typing import Optional, List
 
 from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
 from detection.image_yolo import (
@@ -20,7 +20,7 @@ from utility.geometryutils import Rectangle
 from utility.parallel import ProgressTracker
 
 # Initialize Logger
-logger = logging.getLogger("yolo_detection")
+logger = logging.getLogger("cluster")
 
 @dataclass
 class Cluster:
@@ -167,7 +167,7 @@ def process_images(
     progress_bar: Optional[tqdm | ProgressTracker] = None,
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
-    target_classes: Optional[list[int]] = None,
+    target_classes: Optional[List[int]] = None,
     max_distance: int = 60,
     max_size_ratio: float = 2.5,
 ) -> list[Cluster]:
@@ -192,7 +192,7 @@ def process_images(
     results_list: list[Cluster] = []
 
     try:
-        thread_model = YOLO(model_name)
+        thread_model = load_model(model_name)
     except Exception as e:
         logger.error("Failed to load YOLO model '%s': %s", model_name, e)
         if progress_bar:
@@ -459,7 +459,7 @@ def main() -> None:
 
     total_counts: dict[str, int] = {}
     try:
-        model = YOLO(args.model)
+        model = load_model(args.model)
         for cls in target_classes:
             if cls in model.names:
                 label = model.names[cls]

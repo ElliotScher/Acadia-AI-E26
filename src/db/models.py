@@ -29,8 +29,8 @@ from sqlalchemy.orm import (
 )
 
 from detection.classes import CLASS_ID_MAPPING
+from detection.direction.pedestrian_direction import process_single_image
 from detection.image_yolo import DetectionResult
-from detection.pose_direction import process_single_image
 from utility.geometryutils import Rectangle
 
 
@@ -178,7 +178,7 @@ class Image(Base):
                     if instance.entity.cluster not in clusters:
                         clusters.append(instance.entity.cluster)
                 clusterCount += len(clusters)
-                
+
             if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
