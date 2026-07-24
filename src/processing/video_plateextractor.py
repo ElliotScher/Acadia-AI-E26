@@ -24,6 +24,7 @@ from src.utility.imgutils import (
     validate_video_start_times,
 )
 from utility.parallel import ProgressTracker
+from utility.yoloutility import load_model
 
 # Initialize Logger
 logger = logging.getLogger("video_plateextractor")
@@ -259,7 +260,7 @@ def run_video_plate_extraction(
         raise
 
     try:
-        model = YOLO(str(plate_model))
+        model = load_model(str(plate_model))
     except Exception as e:
         logger.error("Error loading plate model '%s': %s", plate_model, e)
         raise

@@ -30,7 +30,7 @@ def test_process_videos_basic():
     mock_progress = MagicMock()
 
     with (
-        patch("src.detection.video_yolo.YOLO", return_value=mock_model),
+        patch("src.detection.video_yolo.load_model", return_value=mock_model),
         patch("cv2.VideoCapture", return_value=mock_cap),
     ):
 
@@ -93,7 +93,7 @@ def test_process_videos_inclusion_region():
     inclusion = Rectangle(0, 0, 50, 50)
 
     with (
-        patch("src.detection.video_yolo.YOLO", return_value=mock_model),
+        patch("src.detection.video_yolo.load_model", return_value=mock_model),
         patch("cv2.VideoCapture", return_value=mock_cap),
     ):
 
@@ -146,7 +146,7 @@ def test_process_videos_vehicle_merge_default_folds_truck_into_car():
     mock_progress = MagicMock()
 
     with (
-        patch("src.detection.video_yolo.YOLO", return_value=mock_model),
+        patch("src.detection.video_yolo.load_model", return_value=mock_model),
         patch("cv2.VideoCapture", return_value=mock_cap),
     ):
         results = process_videos(
@@ -184,7 +184,7 @@ def test_process_videos_vehicle_merge_disabled_keeps_truck_distinct():
     mock_progress = MagicMock()
 
     with (
-        patch("src.detection.video_yolo.YOLO", return_value=mock_model),
+        patch("src.detection.video_yolo.load_model", return_value=mock_model),
         patch("cv2.VideoCapture", return_value=mock_cap),
     ):
         results = process_videos(
@@ -223,7 +223,7 @@ def test_process_videos_vehicle_merge_disabled_leaves_car_unchanged():
     mock_progress = MagicMock()
 
     with (
-        patch("src.detection.video_yolo.YOLO", return_value=mock_model),
+        patch("src.detection.video_yolo.load_model", return_value=mock_model),
         patch("cv2.VideoCapture", return_value=mock_cap),
     ):
         results = process_videos(
@@ -267,7 +267,7 @@ def _run_main_and_capture_process_videos_kwargs(cli_args, tmp_path):
 
     with (
         patch.object(sys, "argv", argv),
-        patch("src.detection.video_yolo.YOLO", return_value=mock_model),
+        patch("src.detection.video_yolo.load_model", return_value=mock_model),
         patch("cv2.VideoCapture", return_value=mock_cap),
         patch(
             "src.detection.video_yolo.process_videos",

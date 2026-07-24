@@ -23,6 +23,7 @@ from ultralytics import YOLO
 from utility.geometryutils import Rectangle
 from detection.classes import TARGET_CLASSES
 from utility.parallel import ProgressTracker
+from utility.yoloutility import load_model
 
 # COCO classes: 0=person, 2=car, 5=bus, 7=truck
 DEFAULT_TARGET_CLASSES = TARGET_CLASSES
@@ -109,7 +110,7 @@ def _frame_worker(
     thread_model = None
     if run_base_model:
         try:
-            thread_model = YOLO(model_name)
+            thread_model = load_model(model_name)
         except Exception as e:
             logger.error(
                 "Failed to load YOLO model '%s' in worker thread: %s", model_name, e
@@ -120,7 +121,7 @@ def _frame_worker(
     thread_plate_model = None
     if plate_model_name:
         try:
-            thread_plate_model = YOLO(plate_model_name)
+            thread_plate_model = load_model(plate_model_name)
         except Exception as e:
             logger.error(
                 "Failed to load license plate YOLO model '%s' in worker thread: %s",
@@ -637,7 +638,7 @@ def main() -> None:
     total_counts: Dict[str, int] = {}
     if run_base_model:
         try:
-            model = YOLO(args.model)
+            model = load_model(args.model)
             for cls in target_classes:
                 if cls in model.names:
                     if args.merge: merged_cls = merge_vehicle_class_id(cls)

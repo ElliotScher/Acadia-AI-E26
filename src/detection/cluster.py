@@ -192,7 +192,7 @@ def process_images(
     results_list: list[Cluster] = []
 
     try:
-        thread_model = YOLO(model_name)
+        thread_model = load_model(model_name)
     except Exception as e:
         logger.error("Failed to load YOLO model '%s': %s", model_name, e)
         if progress_bar:
@@ -459,7 +459,7 @@ def main() -> None:
 
     total_counts: dict[str, int] = {}
     try:
-        model = YOLO(args.model)
+        model = load_model(args.model)
         for cls in target_classes:
             if cls in model.names:
                 label = model.names[cls]
