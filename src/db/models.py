@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import Never
 
 import csv
 import datetime as dt
@@ -27,15 +28,20 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+from cv2 import CAP_PROP_FPS, CAP_PROP_FRAME_COUNT
 
 from detection.classes import CLASS_ID_MAPPING
 from detection.image_yolo import DetectionResult
 from detection.pose_direction import process_single_image
+from detection.video_yolo import open_video_capture
 from utility.geometryutils import Rectangle
 
 
 class Base(DeclarativeBase):
     pass
+
+
+directions = ("left", "right", "forward", "back")
 
 
 class Image(Base):
@@ -75,11 +81,16 @@ class Image(Base):
     def to_detection_result(self, session: Session) -> DetectionResult:
         return DetectionResult(
             Path(self.path).resolve(),
-            list(map(lambda i: (
-                Rectangle(i.x, i.y, i.width, i.height),
-                i.entity_id,
-                i.confidence
-            ), self.get_instances(session)))
+            list(
+                map(
+                    lambda i: (
+                        Rectangle(i.x, i.y, i.width, i.height),
+                        i.entity_id,
+                        i.confidence,
+                    ),
+                    self.get_instances(session),
+                )
+            ),
         )
 
     @staticmethod
@@ -124,7 +135,11 @@ class Image(Base):
 
     @staticmethod
     def export_to_csv(
-        session: Session, images: list[Image], path: str, interval: int = 0
+        session: Session,
+        images: list[Image],
+        path: str,
+        interval: int = 0,
+        separateDirections: bool = False,
     ):
         with open(path, mode="w", newline="") as file:
             writer = csv.writer(file)
@@ -134,8 +149,15 @@ class Image(Base):
             entityCounts: dict[int, int] = dict()
             clusterCount = 0
             for presentType in presentTypes:
-                header.append(CLASS_ID_MAPPING[presentType] + " count")
-                entityCounts[presentType] = 0
+                if separateDirections:
+                    for d in range(len(directions)):
+                        header.append(
+                            CLASS_ID_MAPPING[presentType] + " count - " + directions[d]
+                        )
+                        entityCounts[presentType + (d * len(CLASS_ID_MAPPING))] = 0
+                else:
+                    header.append(CLASS_ID_MAPPING[presentType] + " count")
+                    entityCounts[presentType] = 0
             header.append("cluster count")
 
             lastRangeTime: dt.datetime | None = None
@@ -174,11 +196,27 @@ class Image(Base):
 
                 clusters = []
                 for instance in image.get_instances(session):
-                    entityCounts[instance.type_id] += 1
+                    if separateDirections:
+                        if instance.direction_lr == 1:
+                            entityCounts[instance.type_id] += 1
+                        elif instance.direction_lr == -1:
+                            entityCounts[instance.type_id + len(CLASS_ID_MAPPING)] += 1
+
+                        if instance.direction_fb == 1:
+                            entityCounts[
+                                instance.type_id + (2 * len(CLASS_ID_MAPPING))
+                            ] += 1
+                        elif instance.direction_fb == -1:
+                            entityCounts[
+                                instance.type_id + (3 * len(CLASS_ID_MAPPING))
+                            ] += 1
+                    else:
+                        entityCounts[instance.type_id] += 1
+
                     if instance.entity.cluster not in clusters:
                         clusters.append(instance.entity.cluster)
                 clusterCount += len(clusters)
-                
+
             if row is not None:
                 for entity in entityCounts.keys():
                     row.append(entityCounts[entity])
@@ -192,10 +230,67 @@ class Image(Base):
         return f"Image({self.id})"
 
 
+class Video(Base):
+    __tablename__ = "video"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    path: Mapped[str] = mapped_column(String(), unique=True, nullable=False)
+    datetime: Mapped[dt.datetime] = mapped_column(DateTime(), nullable=False)
+    time: Mapped[dt.time] = mapped_column(Time(), nullable=False)
+    analyzed: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    frames: Mapped[int] = mapped_column(Integer(), nullable=False)
+    fps: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+    def __init__(self, **kwargs):
+        super(Video, self).__init__(**kwargs)
+        if (
+            self.time is None
+        ):  # editor may say code is unreachable, necessary for migrations
+            self.time: Never = dt.time(
+                self.datetime.hour, self.datetime.minute, self.datetime.second
+            )
+
+    @staticmethod
+    def import_from_dir(session: Session, dir: str):
+        for root, _, files in os.walk(dir):
+            for file in files:
+                if not (
+                    file.lower().endswith(".mp4")
+                    or file.lower().endswith(".avi")
+                    or file.lower().endswith(".mov")
+                    or file.lower().endswith(".mkv")
+                    or file.lower().endswith(".webm")
+                ):
+                    continue
+
+                path = os.path.normpath(os.path.abspath(os.path.join(root, file)))
+                if session.query(exists().where(Video.path == path)).scalar():
+                    continue
+
+                cap = open_video_capture(path)
+                if not cap.isOpened():
+                    continue
+
+                frames = cap.get(CAP_PROP_FRAME_COUNT)
+                fps = cap.get(CAP_PROP_FPS)
+                cap.release()
+
+                video = Video(
+                    path=path,
+                    datetime=dt.datetime.fromtimestamp(os.path.getmtime(path)),
+                    frames=int(frames),
+                    fps=int(fps),
+                )
+
+                session.add(video)
+        session.commit()
+
+
 class Entity(Base):
     __tablename__ = "entity"
+    __mapper_args__ = {"confirm_deleted_rows": False}
     id: Mapped[int] = mapped_column(primary_key=True)
     speed: Mapped[float] = mapped_column(Float(), nullable=True)
+    rawSpeed: Mapped[float] = mapped_column(Float(), nullable=True)
     ebike: Mapped[bool] = mapped_column(Boolean(), nullable=True)
     cluster: Mapped[int] = mapped_column(Integer(), nullable=True)
 
@@ -261,6 +356,9 @@ class Entity(Base):
                 "dwell time",
                 "type",
                 "cluster size",
+                "left/right",
+                "forward/back",
+                "speed",
             ]
 
             writer.writerows([header])
@@ -269,6 +367,7 @@ class Entity(Base):
             for entity in entities:
                 earliestImage = entity.get_earliest_image(session)
                 latestImage = entity.get_latest_image(session)
+                firstInstance = entity.get_instances(session)[0]
                 row = [
                     earliestImage.datetime.strftime("%Y-%m-%d"),
                     earliestImage.datetime.strftime("%H:%M:%S"),
@@ -283,6 +382,19 @@ class Entity(Base):
                         if entity.cluster
                         else 0
                     ),
+                    (
+                        "left"
+                        if firstInstance.direction_lr == -1
+                        else ("right" if firstInstance.direction_lr == 1 else "unknown")
+                    ),
+                    (
+                        "back"
+                        if firstInstance.direction_fb == -1
+                        else (
+                            "forward" if firstInstance.direction_fb == 1 else "unknown"
+                        )
+                    ),
+                    round(entity.speed, 4) if entity.speed is not None else "",
                 ]
 
                 data.append(row)
@@ -359,6 +471,7 @@ class Entity(Base):
 
 class Instance(Base):
     __tablename__ = "instance"
+    __mapper_args__ = {"confirm_deleted_rows": False}
     image_id: Mapped[int] = mapped_column(
         ForeignKey(Image.id, ondelete="cascade", onupdate="restrict"), primary_key=True
     )
@@ -392,7 +505,13 @@ class Instance(Base):
             0, min(ay2, by2) - max(ay1, by1)
         )
         union = (self.width * self.height) + (other.width * other.height) - intersection
+
+        if union <= 0:
+            return 0
         return intersection / union
+
+    def center(self) -> tuple[int, int]:
+        return (self.x + int(self.width / 2), self.y + int(self.height / 2))
 
     def __repr__(self) -> str:
         return f"Instance({self.image_id}, {self.entity_id})"
@@ -501,3 +620,13 @@ SELECT direction_lr FROM instance LIMIT 1
     except:
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_lr INTEGER"))
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_fb INTEGER"))
+
+
+@event.listens_for(Entity.metadata, "after_create")
+def add_column_if_not_exists(target, connection, **kwargs):
+    try:
+        connection.execute(DDL("""
+SELECT rawSpeed FROM entity LIMIT 1
+"""))
+    except:
+        connection.execute(DDL("ALTER TABLE entity ADD COLUMN rawSpeed FLOAT"))

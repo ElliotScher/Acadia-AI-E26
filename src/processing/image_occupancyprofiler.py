@@ -8,30 +8,23 @@ entities chronologically across images to compute occupancy.
 
 import argparse
 import csv
-from dataclasses import dataclass
 import datetime
 import json
 import logging
 import sys
 import threading
+from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from utility import imgutils
-
 import matplotlib
 
+from utility import imgutils
 from utility.geometryutils import Rectangle
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-
-class Direction(Enum):
-    LEFT_RIGHT = auto()
-    RIGHT_LEFT = auto()
-    UNKNOWN = auto()
 
 
 import cv2
@@ -50,6 +43,13 @@ from src.utility.imgutils import (
     get_timestamp,
 )
 from utility.parallel import ProgressTracker
+
+
+class Direction(Enum):
+    LEFT_RIGHT = auto()
+    RIGHT_LEFT = auto()
+    UNKNOWN = auto()
+
 
 # Initialize Logger
 logger = logging.getLogger("image_occupancyprofiler")
@@ -1078,7 +1078,7 @@ def run_entry_exit_profiling(
     same_directory = entry_folder.resolve() == exit_folder.resolve()
 
     # Convert direction parameters to Direction Enum if they are strings
-    def to_enum(d : Union[str, Direction]):
+    def to_enum(d: Union[str, Direction]):
         """
         Converts a raw string or direction object to a Direction Enum.
 
@@ -1175,7 +1175,12 @@ def run_entry_exit_profiling(
                 "flipping exit crops before feature extraction."
             )
         exit_results = extract_features_for_directory(
-            exit_images, model, device, transform, num_threads=threads, flip=same_directory
+            exit_images,
+            model,
+            device,
+            transform,
+            num_threads=threads,
+            flip=same_directory,
         )
     exit_db, exit_grouped = track_entities_in_directory(
         exit_results,
