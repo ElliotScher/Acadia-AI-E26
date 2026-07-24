@@ -45,6 +45,9 @@ class Base(DeclarativeBase):
     pass
 
 
+directions = ("left", "right", "forward", "back")
+
+
 class Image(Base):
     __tablename__ = "image"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -136,7 +139,11 @@ class Image(Base):
 
     @staticmethod
     def export_to_csv(
-        session: Session, images: list[Image], path: str, interval: int = 0
+        session: Session,
+        images: list[Image],
+        path: str,
+        interval: int = 0,
+        separateDirections: bool = False,
     ):
         with open(path, mode="w", newline="") as file:
             writer = csv.writer(file)
@@ -146,8 +153,15 @@ class Image(Base):
             entityCounts: dict[int, int] = dict()
             clusterCount = 0
             for presentType in presentTypes:
-                header.append(CLASS_ID_MAPPING[presentType] + " count")
-                entityCounts[presentType] = 0
+                if separateDirections:
+                    for d in range(len(directions)):
+                        header.append(
+                            CLASS_ID_MAPPING[presentType] + " count - " + directions[d]
+                        )
+                        entityCounts[presentType + (d * len(CLASS_ID_MAPPING))] = 0
+                else:
+                    header.append(CLASS_ID_MAPPING[presentType] + " count")
+                    entityCounts[presentType] = 0
             header.append("cluster count")
 
             lastRangeTime: dt.datetime | None = None
@@ -186,7 +200,23 @@ class Image(Base):
 
                 clusters = []
                 for instance in image.get_instances(session):
-                    entityCounts[instance.type_id] += 1
+                    if separateDirections:
+                        if instance.direction_lr == 1:
+                            entityCounts[instance.type_id] += 1
+                        elif instance.direction_lr == -1:
+                            entityCounts[instance.type_id + len(CLASS_ID_MAPPING)] += 1
+
+                        if instance.direction_fb == 1:
+                            entityCounts[
+                                instance.type_id + (2 * len(CLASS_ID_MAPPING))
+                            ] += 1
+                        elif instance.direction_fb == -1:
+                            entityCounts[
+                                instance.type_id + (3 * len(CLASS_ID_MAPPING))
+                            ] += 1
+                    else:
+                        entityCounts[instance.type_id] += 1
+
                     if instance.entity.cluster not in clusters:
                         clusters.append(instance.entity.cluster)
                 clusterCount += len(clusters)
@@ -332,7 +362,7 @@ class Entity(Base):
                 "cluster size",
                 "left/right",
                 "forward/back",
-                "speed"
+                "speed",
             ]
 
             writer.writerows([header])
@@ -368,7 +398,7 @@ class Entity(Base):
                             "forward" if firstInstance.direction_fb == 1 else "unknown"
                         )
                     ),
-                    round(entity.speed, 4) if entity.speed is not None else ""
+                    round(entity.speed, 4) if entity.speed is not None else "",
                 ]
 
                 data.append(row)
@@ -594,6 +624,7 @@ SELECT direction_lr FROM instance LIMIT 1
     except:
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_lr INTEGER"))
         connection.execute(DDL("ALTER TABLE instance ADD COLUMN direction_fb INTEGER"))
+
 
 @event.listens_for(Entity.metadata, "after_create")
 def add_column_if_not_exists(target, connection, **kwargs):

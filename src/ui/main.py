@@ -268,7 +268,10 @@ class Root(QtWidgets.QMainWindow):
 
         if options.mode == "images":
             Image.export_to_csv(
-                self.session, self.imageTab.getImages(options.filtered), options.path
+                self.session,
+                self.imageTab.getImages(options.filtered),
+                options.path,
+                separateDirections=options.separateDirections,
             )
         elif options.mode == "interval":
             Image.export_to_csv(
@@ -276,6 +279,7 @@ class Root(QtWidgets.QMainWindow):
                 self.imageTab.getImages(options.filtered),
                 options.path,
                 options.interval,
+                options.separateDirections,
             )
         elif options.mode == "clusters":
             Entity.export_clusters_to_csv(

@@ -15,6 +15,7 @@ class ExportOptions:
     filtered: bool
     interval: int
     open: bool
+    separateDirections: bool
 
 
 class ExportDialog(QtWidgets.QDialog):
@@ -31,6 +32,7 @@ class ExportDialog(QtWidgets.QDialog):
 
         self.exportModeImages = QtWidgets.QRadioButton("Row per Image")
         self.exportModeImages.setChecked(True)
+        self.exportModeImages.toggled.connect(self.enableSeparateDirections)
         layout.addWidget(self.exportModeImages)
         self.exportModeEntities = QtWidgets.QRadioButton("Row per Entity")
         layout.addWidget(self.exportModeEntities)
@@ -52,6 +54,8 @@ class ExportDialog(QtWidgets.QDialog):
 
         layout.addSpacing(10)
 
+        self.separateDirections = QtWidgets.QCheckBox("Separate By Direction")
+        layout.addWidget(self.separateDirections)
         self.openExport = QtWidgets.QCheckBox("Open When Exported")
         layout.addWidget(self.openExport)
 
@@ -68,6 +72,13 @@ class ExportDialog(QtWidgets.QDialog):
     @QtCore.Slot()
     def enableIntervalTime(self):
         self.exportModeIntervalTime.setEnabled(self.exportModeInterval.isChecked())
+        self.enableSeparateDirections()
+
+    @QtCore.Slot()
+    def enableSeparateDirections(self):
+        self.separateDirections.setEnabled(
+            self.exportModeImages.isChecked() or self.exportModeInterval.isChecked()
+        )
 
     @QtCore.Slot()
     def export(self):
@@ -93,6 +104,7 @@ class ExportDialog(QtWidgets.QDialog):
                     self.filtered,
                     self.exportModeIntervalTime.value(),
                     self.openExport.isChecked(),
+                    self.separateDirections.isChecked()
                 )
             )
 
