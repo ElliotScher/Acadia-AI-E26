@@ -20,7 +20,7 @@ from utility.geometryutils import Rectangle
 from utility.parallel import ProgressTracker
 
 # Initialize Logger
-logger = logging.getLogger("yolo_detection")
+logger = logging.getLogger("cluster")
 
 @dataclass
 class Cluster:
