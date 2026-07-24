@@ -1,6 +1,6 @@
 from typing import Literal
 from dataclasses import dataclass
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 
 @dataclass

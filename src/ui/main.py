@@ -10,7 +10,6 @@ from cluster_dialog import ClusterDialog
 from entity_tab import EntitiesTab
 from export_dialog import ExportDialog, ExportOptions
 from image_tab import ImageTab
-from cluster_dialog import ClusterDialog
 from iou_tracking_dialog import IOUTrackingDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy.engine import Engine

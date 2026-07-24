@@ -1,10 +1,9 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-import math
 from random import randint
 
-from db.models import Image, Instance, Entity
+from db.models import Image, Entity
 from detection.cluster import process_clusters
 
 

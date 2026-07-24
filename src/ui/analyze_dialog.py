@@ -1,17 +1,10 @@
 from typing import Callable
-from setuptools.config.setupcfg import Target
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import functools
-from typing import Callable
-from setuptools.config.setupcfg import Target
-from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy.orm import Session
-from sqlalchemy import select
 import logging
 import math
-import functools
 import cv2
 import os
 from pathlib import Path
@@ -24,7 +17,6 @@ from detection.video_yolo import (
     DetectionResult as VideoDetectionResult,
 )
 import utility.parallel as upl
-from db.models import Entity, Image, Instance
 from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
 from detection.image_yolo import (
     DetectionResult,
@@ -289,7 +281,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             for detection in r.boxes:
                 frameIdx = detection[0]
 
-                if not frameIdx in frames:
+                if frameIdx not in frames:
                     framePath = os.path.join(
                         str(r.video_path) + "-frames", str(frameIdx) + ".jpg"
                     )

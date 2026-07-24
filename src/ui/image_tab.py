@@ -1,8 +1,6 @@
 import typing
 import cv2
 
-from analyze_dialog import AnalyzeDialog
-from bike_rider_merging_dialog import BikeRiderMergeDialog
 from filters import Filters
 from filters.image import (
     AnalyzedFilter,
@@ -13,14 +11,12 @@ from filters.image import (
     NoEntityFilter,
     NotAnalyzedFilter,
 )
-from pose_direction_dialog import PoseDirectionDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db.models import Entity, Image, Instance
 from detection.classes import CLASS_ID_MAPPING
-from bike_rider_merging_dialog import BikeRiderMergeDialog
 
 colors = (
     "#00ff00",

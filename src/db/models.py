@@ -28,10 +28,6 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
-from pathlib import Path
-import datetime as dt
-import os
-import csv
 from cv2 import CAP_PROP_FPS, CAP_PROP_FRAME_COUNT
 
 from detection.classes import CLASS_ID_MAPPING
@@ -266,7 +262,7 @@ class Video(Base):
                 ):
                     continue
 
-                path = os.path.join(root, file)
+                path = os.path.normpath(os.path.abspath(os.path.join(root, file)))
                 if session.query(exists().where(Video.path == path)).scalar():
                     continue
 

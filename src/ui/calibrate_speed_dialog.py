@@ -1,8 +1,6 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-import math
-import datetime as dt
 
 from db.models import Entity
 
