@@ -49,8 +49,16 @@ class Root(QtWidgets.QMainWindow):
 
         self.buildMenu()
 
-        self.spinner = QtWidgets.QLabel()
-        layout.addWidget(self.spinner)
+        spinnerLayout = QtWidgets.QHBoxLayout()
+        self.spinner = QtWidgets.QLabel("No background tasks.")
+        spinnerLayout.addWidget(self.spinner)
+        self.progressBar = QtWidgets.QProgressBar(
+            minimum=0,
+            maximum=100
+        )
+        self.progressBar.setVisible(False)
+        spinnerLayout.addWidget(self.progressBar)
+        layout.addLayout(spinnerLayout)
         upl.ThreadTracker().threadAdded.connect(self.spin)
         upl.ThreadTracker().threadProgress.connect(self.spin)
         upl.ThreadTracker().threadRemoved.connect(self.spin)
@@ -59,74 +67,84 @@ class Root(QtWidgets.QMainWindow):
     def spin(self, thread: QtCore.QThread):
         self.spinner.setText(upl.ThreadTracker().spinText())
 
+        progress = upl.ThreadTracker().spinProgress()
+        self.progressBar.setVisible(progress > -1)
+        self.progressBar.setValue(progress)
+
     def buildMenu(self):
         mFile = self.menuBar().addMenu("File")
-        aOpen = QtGui.QAction("Open Images", self)
+        aOpen = QtGui.QAction("Open Image Folder", self)
         aOpen.triggered.connect(self.fileOpen)
         mFile.addAction(aOpen)
-        aOpenVideos = QtGui.QAction("Open Videos", self)
+        aOpenVideos = QtGui.QAction("Open Video Folder", self)
         aOpenVideos.triggered.connect(self.fileOpenVideos)
         mFile.addAction(aOpenVideos)
-        aExportFiltered = QtGui.QAction("Export Filtered", self)
+
+        smExport = mFile.addMenu("Export")
+        aExportFiltered = QtGui.QAction("Filtered", self)
         aExportFiltered.triggered.connect(self.fileExportFiltered)
-        mFile.addAction(aExportFiltered)
-        aExportAll = QtGui.QAction("Export All", self)
+        smExport.addAction(aExportFiltered)
+        aExportAll = QtGui.QAction("All", self)
         aExportAll.triggered.connect(self.fileExportAll)
-        mFile.addAction(aExportAll)
+        smExport.addAction(aExportAll)
 
         mAnalyze = self.menuBar().addMenu("Analyze")
-        aAnalyzeFiltered = QtGui.QAction("Analyze Filtered", self)
+        smAnalyze = mAnalyze.addMenu("Base Image Analysis")
+        aAnalyzeFiltered = QtGui.QAction("Filtered", self)
         aAnalyzeFiltered.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyze, True)
         )
-        mAnalyze.addAction(aAnalyzeFiltered)
-        aAnalyzeAll = QtGui.QAction("Analyze All", self)
+        smAnalyze.addAction(aAnalyzeFiltered)
+        aAnalyzeAll = QtGui.QAction("All", self)
         aAnalyzeAll.triggered.connect(lambda: self.runAnalysis(self.doAnalyze, False))
-        mAnalyze.addAction(aAnalyzeAll)
+        smAnalyze.addAction(aAnalyzeAll)
 
-        aMergeBikesFiltered = QtGui.QAction("Merge Filtered Bikes and Riders", self)
+        smMergeBikes = mAnalyze.addMenu("Merge Bikes and Riders")
+        aMergeBikesFiltered = QtGui.QAction("Filtered", self)
         aMergeBikesFiltered.triggered.connect(
             lambda: self.runAnalysis(self.doMergeBikes, True)
         )
-        mAnalyze.addAction(aMergeBikesFiltered)
-        aMergeBikesAll = QtGui.QAction("Merge All Bikes and Riders", self)
+        smMergeBikes.addAction(aMergeBikesFiltered)
+        aMergeBikesAll = QtGui.QAction("All", self)
         aMergeBikesAll.triggered.connect(
             lambda: self.runAnalysis(self.doMergeBikes, False)
         )
-        mAnalyze.addAction(aMergeBikesAll)
+        smMergeBikes.addAction(aMergeBikesAll)
 
-        aAnalyzeClustersFiltered = QtGui.QAction("Analyze Filtered Clusters", self)
+        smClusters = mAnalyze.addMenu("Find Clusters")
+        aAnalyzeClustersFiltered = QtGui.QAction("Filtered", self)
         aAnalyzeClustersFiltered.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyzeClusters, True)
         )
-        mAnalyze.addAction(aAnalyzeClustersFiltered)
-        aAnalyzeClustersAll = QtGui.QAction("Analyze All Clusters", self)
+        smClusters.addAction(aAnalyzeClustersFiltered)
+        aAnalyzeClustersAll = QtGui.QAction("All", self)
         aAnalyzeClustersAll.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyzeClusters, False)
         )
-        mAnalyze.addAction(aAnalyzeClustersAll)
+        smClusters.addAction(aAnalyzeClustersAll)
 
-        aIOUTracking = QtGui.QAction("Run IOU Tracking", self)
+        aIOUTracking = QtGui.QAction("Frame-By-Frame Tracking", self)
         aIOUTracking.triggered.connect(self.runIouTracking)
         mAnalyze.addAction(aIOUTracking)
         aCalibrateSpeed = QtGui.QAction("Calibrate Speed From Selected Entity", self)
         aCalibrateSpeed.triggered.connect(self.calibrateSpeed)
         mAnalyze.addAction(aCalibrateSpeed)
 
+        smDirection = mAnalyze.addMenu("Direction From Pose")
         aAnalyzePoseDirection = QtGui.QAction(
-            "Analyze Filtered For Direction From Poses", self
+            "Filtered", self
         )
         aAnalyzePoseDirection.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyzePoseDirection, True)
         )
-        mAnalyze.addAction(aAnalyzePoseDirection)
+        smDirection.addAction(aAnalyzePoseDirection)
         aAnalyzeAllPoseDirection = QtGui.QAction(
-            "Analyze All For Direction From Poses", self
+            "All", self
         )
         aAnalyzeAllPoseDirection.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyzePoseDirection, False)
         )
-        mAnalyze.addAction(aAnalyzeAllPoseDirection)
+        smDirection.addAction(aAnalyzeAllPoseDirection)
 
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
@@ -218,7 +236,7 @@ class Root(QtWidgets.QMainWindow):
 
                 if entity is None or entity.rawSpeed is None:
                     self.warnDialog(
-                        "Select an entity with a known speed to calibrate speed from"
+                        "Run frame-by-frame tracking and select an entity with a known speed to calibrate speed from"
                     )
                     return
 
@@ -227,11 +245,11 @@ class Root(QtWidgets.QMainWindow):
                 dialog.exec()
             else:
                 self.warnDialog(
-                    "Select an entity with a known speed to calibrate speed from"
+                    "Run frame-by-frame tracking and select an entity with a known speed to calibrate speed from"
                 )
         else:
             self.warnDialog(
-                "Select an entity with a known speed in the entities tab to calibrate speed from"
+                "Run frame-by-frame tracking and select an entity with a known speed in the entities tab to calibrate speed from"
             )
 
     @QtCore.Slot()
@@ -247,7 +265,7 @@ class Root(QtWidgets.QMainWindow):
     def openEntity(self, entity: Entity):
         r = self.entitiesTab.focusEntity(entity)
         if not r:
-            self.warnDialog("Image is not within the current entity filters.")
+            self.warnDialog("Entity is not within the current entity filters.")
             return
         if self.tabs.currentWidget() == self.imageTab:
             self.tabs.setCurrentWidget(self.entitiesTab)
