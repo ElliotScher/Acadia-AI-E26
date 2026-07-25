@@ -1,8 +1,7 @@
-from sqlalchemy import Select, select, func, or_, and_
 from sqlalchemy.orm import Session
 from db.models import Image, Instance
 
-
+    
 def merge_bikes_riders(session: Session, image: Image, threshold: float):
     instances = image.get_instances(session)
     bikes: filter[Instance] = filter(

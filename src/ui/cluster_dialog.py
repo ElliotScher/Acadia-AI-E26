@@ -1,14 +1,15 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-import math
 from random import randint
 
-from db.models import Image, Instance, Entity
+from db.models import Image, Entity
 from detection.cluster import process_clusters
 
 
 class ClusterDialog(QtWidgets.QDialog):
+    finish = QtCore.Signal()
+
     def __init__(self, session: Session, images: list[Image], *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -68,4 +69,5 @@ class ClusterDialog(QtWidgets.QDialog):
                         self.session.add(entity)
 
         self.session.commit()
+        self.finish.emit()
         self.accept()

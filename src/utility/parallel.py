@@ -15,7 +15,7 @@ class Async(QtCore.QThread):
 
     result = QtCore.Signal(Any)
 
-    def __init__(self, name: str, fn: typing.Callable[[], Any]):
+    def __init__(self, name: str, fn: typing.Callable[["Async"], Any]):
         super().__init__()
         self.setObjectName(name)
         self.fn = fn
@@ -24,7 +24,10 @@ class Async(QtCore.QThread):
 
     @QtCore.Slot()
     def run(self):
-        self.result.emit(self.fn())
+        self.result.emit(self.fn(self))
+
+    def progess(self, value: float):
+        ThreadTracker().progressThread(self, value)
 
     @staticmethod
     def progress(value: float):
@@ -94,10 +97,14 @@ class ThreadTracker(_T):
         return cls._instance
 
 class ProgressTracker():
-    def __init__(self, total: int):
+    def __init__(self, total: int, thread: Async | None = None):
         self.done = 0
+        self.thread = thread
         self.total = total
 
     def update(self, n: int):
         self.done += n
-        Async.progress(self.done / self.total)
+        if self.thread is not None:
+            self.thread.progess(self.done / self.total)
+        else:
+            Async.progress(self.done / self.total)

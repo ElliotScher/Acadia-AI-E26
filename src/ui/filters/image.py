@@ -2,7 +2,6 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 from sqlalchemy import Select, and_, func, distinct
 from db.models import Image, Instance, Entity
-from db.models import Image, Instance, Entity
 from detection.classes import CLASS_ID_MAPPING
 from filters import Filter, DateFilter, TimeFilter
 
@@ -231,7 +230,9 @@ class ClusterCountFilter(Filter):
             .group_by(Image.id)
             .having(
                 and_(
-                    func.count(distinct(Entity.cluster)).between(self.minFilter.value(), self.maxFilter.value())
+                    func.count(distinct(Entity.cluster)).between(
+                        self.minFilter.value(), self.maxFilter.value()
+                    )
                 )
             )
         )

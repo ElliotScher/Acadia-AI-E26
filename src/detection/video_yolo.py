@@ -3,6 +3,7 @@ YOLO Video Object Detection Utility
 
 Processes videos in an input directory using YOLO, maps target categories (e.g., bus/truck to car).
 """
+import os
 
 import argparse
 import datetime
@@ -75,6 +76,8 @@ def _frame_worker(
     device: str = "cpu",
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
+    downsample_factor: int = 1,
+    write_frames: bool = False
 ) -> None:
     """
     Worker thread that pulls frames from the queue, runs YOLO, and records detections.
@@ -97,6 +100,8 @@ def _frame_worker(
         run_base_model (bool): Whether to run the general-purpose COCO model at all. False
             when the caller only requested license plate detection, so no COCO classes
             (person/car/etc.) are detected or drawn. Defaults to True.
+        downsample_factor (int): Process every Nth frame. Defaults to 1.
+        write_frames (bool): Whether to write processed frames to the disk. Defaults to False.
     """
     thread_model = None
     if run_base_model:
@@ -135,64 +140,72 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            boxes_found: list[tuple[int, Rectangle, int, float]] = []
+            if frame_idx % downsample_factor == 0:
+                boxes_found: list[tuple[int, Rectangle, int, float]] = []
 
-            if thread_model is not None:
-                results = thread_model.predict(
-                    source=frame,
-                    conf=conf_threshold,
-                    classes=classes_list,
-                    verbose=False,
-                    device=device,
-                )
+                if thread_model is not None:
+                    results = thread_model.predict(
+                        source=frame,
+                        conf=conf_threshold,
+                        classes=classes_list,
+                        verbose=False,
+                        device=device,
+                    )
 
-                for r in results:
-                    for box in r.boxes:
-                        cls = int(box.cls[0])
+                    for r in results:
+                        for box in r.boxes:
+                            cls = int(box.cls[0])
 
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        w = x2 - x1
-                        h = y2 - y1
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            w = x2 - x1
+                            h = y2 - y1
 
-                        # Apply crop region filter if provided
-                        if inclusion_region is not None:
-                            box_rect = Rectangle(x1, y1, w, h)
-                            if not Rectangle.bounding_box_intersects(
-                                box_rect, inclusion_region
-                            ):
-                                continue
+                            # Apply crop region filter if provided
+                            if inclusion_region is not None:
+                                box_rect = Rectangle(x1, y1, w, h)
+                                if not Rectangle.bounding_box_intersects(
+                                    box_rect, inclusion_region
+                                ):
+                                    continue
 
-                        conf = float(box.conf[0])
-                        rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, cls, conf))
+                            conf = float(box.conf[0])
+                            rect = Rectangle(x=x1, y=y1, w=w, h=h)
+                            boxes_found.append((frame_idx, rect, cls, conf))
 
-            if thread_plate_model is not None:
-                plate_results = thread_plate_model.predict(
-                    source=frame,
-                    conf=conf_threshold,
-                    verbose=False,
-                    device=device,
-                )
-                for r in plate_results:
-                    for box in r.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        w = x2 - x1
-                        h = y2 - y1
+                if thread_plate_model is not None:
+                    plate_results = thread_plate_model.predict(
+                        source=frame,
+                        conf=conf_threshold,
+                        verbose=False,
+                        device=device,
+                    )
+                    for r in plate_results:
+                        for box in r.boxes:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            w = x2 - x1
+                            h = y2 - y1
 
-                        if inclusion_region is not None:
-                            box_rect = Rectangle(x1, y1, w, h)
-                            if not Rectangle.bounding_box_intersects(
-                                box_rect, inclusion_region
-                            ):
-                                continue
+                            if inclusion_region is not None:
+                                box_rect = Rectangle(x1, y1, w, h)
+                                if not Rectangle.bounding_box_intersects(
+                                    box_rect, inclusion_region
+                                ):
+                                    continue
 
-                        conf = float(box.conf[0])
-                        rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, -1, conf))
+                            conf = float(box.conf[0])
+                            rect = Rectangle(x=x1, y=y1, w=w, h=h)
+                            boxes_found.append((frame_idx, rect, -1, conf))
 
-            if boxes_found:
-                with results_lock:
-                    results_by_video[video_path].extend(boxes_found)
+                if boxes_found:
+                    with results_lock:
+                        results_by_video[video_path].extend(boxes_found)
+                
+                    if write_frames:
+                        framePath = os.path.join(
+                            str(video_path) + "-frames", str(frame_idx) + ".jpg"
+                        )
+                        os.makedirs(Path(framePath).parent, exist_ok=True)
+                        cv2.imwrite(framePath, frame)
 
         except Exception as e:
             logger.error(
@@ -214,6 +227,8 @@ def process_videos(
     threads: int = 1,
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
+    downsample_factor: int = 1,
+    write_frames: bool = False
 ) -> List[DetectionResult]:
     """
     Processes a list of video paths using YOLO and extracts detection boxes.
@@ -231,6 +246,8 @@ def process_videos(
             trained specifically for license plate detection. When provided, detections from
             this model are included in the results labeled "license_plate". Defaults to None.
         run_base_model (bool): Whether to run the general-purpose COCO model at all. Defaults to True.
+        downsample_factor (int): Process every Nth frame. Defaults to 1.
+        write_frames (bool): Whether to write processed frames to the disk. Defaults to False.
 
     Returns:
         List[DetectionResult]: List of detection results per video.
@@ -274,6 +291,8 @@ def process_videos(
                 device,
                 plate_model_name,
                 run_base_model,
+                downsample_factor,
+                write_frames
             ),
         )
         t.daemon = True
@@ -541,6 +560,17 @@ def main() -> None:
         action="store_true",
         help="Do not save annotated videos.",
     )
+    parser.add_argument(
+        "--downsample",
+        type=int,
+        default=2,
+        help="Process every Nth frame to optimize speed (default: 2).",
+    )
+    parser.add_argument(
+        "--write-frames",
+        action="store_true",
+        help="Whether to write processed frames to the disk (default: False).",
+    )
     from src.utility.loggingutils import setup_logging_and_paths
 
     args, input_folder, output_folder = setup_logging_and_paths(parser, logger)
@@ -671,6 +701,8 @@ def main() -> None:
         threads=thread_count,
         plate_model_name=plate_model_name,
         run_base_model=run_base_model,
+        downsample_factor=args.downsample,
+        write_frames=args.write_frames
     )
 
     progress_bar.close()

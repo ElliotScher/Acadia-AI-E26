@@ -6,7 +6,6 @@ import sys
 from dataclasses import dataclass
 from tqdm import tqdm
 import threading
-from threading import Thread
 import torch
 import logging
 from typing import Optional
@@ -14,7 +13,6 @@ from typing import Optional
 from detection.classes import CLASS_ID_MAPPING, TARGET_CLASSES
 from detection.image_yolo import (
     DetectionResult,
-    load_model,
 )
 from utility.geometryutils import Rectangle
 from utility.parallel import ProgressTracker
