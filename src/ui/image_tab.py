@@ -1,8 +1,6 @@
 import typing
 import cv2
 
-from analyze_dialog import AnalyzeDialog
-from bike_rider_merging_dialog import BikeRiderMergeDialog
 from filters import Filters
 from filters.image import (
     AnalyzedFilter,
@@ -13,7 +11,6 @@ from filters.image import (
     NoEntityFilter,
     NotAnalyzedFilter,
 )
-from pose_direction_dialog import PoseDirectionDialog
 from PySide6 import QtCore, QtGui, QtWidgets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -187,17 +184,6 @@ class ImageTab(QtWidgets.QWidget):
                 self.session.scalars(select(Image).order_by(Image.datetime).distinct())
             )
 
-    @QtCore.Slot()
-    def analyze(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images = self.getImages(filtered)
-
-        dialog = AnalyzeDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
     @QtCore.Slot(Image, result=bool)
     def focusImage(self, image: Image) -> bool:
         if image.id not in self.galleryModel.results:
@@ -215,53 +201,6 @@ class ImageTab(QtWidgets.QWidget):
             QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect,
         )
         return True
-
-    @QtCore.Slot()
-    def analyzePoseDirection(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = PoseDirectionDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def mergeBikes(self, filtered: bool):
-        if not hasattr(self, "session"):
-            return
-
-        images: list[Image] = []
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        dialog = BikeRiderMergeDialog(self.session, images)
-        dialog.accepted.connect(self.refreshGallery)
-        dialog.exec()
-
-    @QtCore.Slot()
-    def export(self, filtered: bool, path: str):
-        if not hasattr(self, "session"):
-            return
-
-        if filtered:
-            images = list(map(self.galleryModel.getById, self.galleryModel.results))
-        else:
-            images = list(
-                self.session.scalars(select(Image).order_by(Image.datetime).distinct())
-            )
-
-        Image.export_to_csv(self.session, images, path)
 
 
 class ImageGallery(QtWidgets.QListView):
@@ -328,11 +267,20 @@ class ImageInfo(QtWidgets.QGroupBox):
 
         for i in range(len(instances)):
             instance = instances[i]
+            directions: list[str] = []
+            if instance.direction_lr == -1:
+                directions.append("left")
+            elif instance.direction_lr == 1:
+                directions.append("right")
+            if instance.direction_fb == -1:
+                directions.append("back")
+            elif instance.direction_fb == 1:
+                directions.append("forward")
             widget = QtWidgets.QWidget(self.entities)
             widget.setFixedHeight(40)
             layout = QtWidgets.QHBoxLayout(widget)
             tlabel = QtWidgets.QLabel(
-                f"<font color={colors[i % len(colors)]}>{CLASS_ID_MAPPING[instance.type_id]}</font>",
+                f"<font color={colors[i % len(colors)]}>{CLASS_ID_MAPPING[instance.type_id] + ((' (' + ', '.join(directions) + ')') if len(directions) > 0 else '')}</font>",
                 widget,
             )
             layout.addWidget(tlabel)

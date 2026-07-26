@@ -1,11 +1,12 @@
 from PySide6 import QtCore, QtWidgets
 from sqlalchemy.orm import Session
+import datetime as dt
 
 from db.models import Image
-from detection.bike_rider_merging import merge_bikes_riders
+from detection.entity_iou_tracking import entity_iou_tracking
 
 
-class BikeRiderMergeDialog(QtWidgets.QDialog):
+class IOUTrackingDialog(QtWidgets.QDialog):
     finish = QtCore.Signal()
 
     def __init__(self, session: Session, images: list[Image], *args, **kwargs):
@@ -18,15 +19,15 @@ class BikeRiderMergeDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout()
 
-        thresholdLayout = QtWidgets.QHBoxLayout()
-        thresholdLayout.addWidget(QtWidgets.QLabel("Minimum overlap threshold"))
-        self.threshold = QtWidgets.QDoubleSpinBox()
-        self.threshold.setSuffix("%")
-        self.threshold.setRange(0, 1)
-        self.threshold.setValue(0.2)
-        self.threshold.setSingleStep(0.01)
-        thresholdLayout.addWidget(self.threshold)
-        layout.addLayout(thresholdLayout)
+        trackingGapLayout = QtWidgets.QHBoxLayout()
+        trackingGapLayout.addWidget(QtWidgets.QLabel("Maximum tracking gap"))
+        self.trackingGap = QtWidgets.QDoubleSpinBox()
+        self.trackingGap.setRange(0.1, 5)
+        self.trackingGap.setValue(1)
+        self.trackingGap.setSingleStep(0.1)
+        trackingGapLayout.addWidget(self.trackingGap)
+        trackingGapLayout.addWidget(QtWidgets.QLabel("seconds"))
+        layout.addLayout(trackingGapLayout)
 
         self.buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
@@ -40,8 +41,9 @@ class BikeRiderMergeDialog(QtWidgets.QDialog):
 
     @QtCore.Slot()
     def analyze(self):
-        for image in self.images:
-            merge_bikes_riders(self.session, image, self.threshold.value())
+        entity_iou_tracking(
+            self.session, self.images, dt.timedelta(seconds=self.trackingGap.value())
+        )
 
         self.finish.emit()
         self.accept()
