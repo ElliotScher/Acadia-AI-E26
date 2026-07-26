@@ -288,7 +288,11 @@ class EntityInfo(QtWidgets.QGroupBox):
             self.typeLabel.setText(
                 CLASS_ID_MAPPING[self.instances[0].type_id].title()
                 + ((" (" + ", ".join(directions) + ")") if len(directions) > 0 else "")
-                + ((" (" + str(round(entity.speed, 2)) + " mph)") if entity.speed is not None else "")
+                + (
+                    (" (" + str(round(entity.speed, 2)) + " mph)")
+                    if entity.speed is not None
+                    else ""
+                )
                 + " seen in:"
             )
 

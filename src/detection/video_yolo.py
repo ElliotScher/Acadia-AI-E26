@@ -3,6 +3,7 @@ YOLO Video Object Detection Utility
 
 Processes videos in an input directory using YOLO, maps target categories (e.g., bus/truck to car).
 """
+
 import os
 
 import argparse
@@ -77,7 +78,7 @@ def _frame_worker(
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
     downsample_factor: int = 1,
-    write_frames: bool = False
+    write_frames: bool = False,
 ) -> None:
     """
     Worker thread that pulls frames from the queue, runs YOLO, and records detections.
@@ -199,7 +200,7 @@ def _frame_worker(
                 if boxes_found:
                     with results_lock:
                         results_by_video[video_path].extend(boxes_found)
-                
+
                     if write_frames:
                         framePath = os.path.join(
                             str(video_path) + "-frames", str(frame_idx) + ".jpg"
@@ -228,7 +229,7 @@ def process_videos(
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
     downsample_factor: int = 1,
-    write_frames: bool = False
+    write_frames: bool = False,
 ) -> List[DetectionResult]:
     """
     Processes a list of video paths using YOLO and extracts detection boxes.
@@ -292,7 +293,7 @@ def process_videos(
                 plate_model_name,
                 run_base_model,
                 downsample_factor,
-                write_frames
+                write_frames,
             ),
         )
         t.daemon = True
@@ -702,7 +703,7 @@ def main() -> None:
         plate_model_name=plate_model_name,
         run_base_model=run_base_model,
         downsample_factor=args.downsample,
-        write_frames=args.write_frames
+        write_frames=args.write_frames,
     )
 
     progress_bar.close()
@@ -717,9 +718,7 @@ def main() -> None:
     else:
         logger.info("Skipping saving annotated videos as requested.")
 
-    detection_details: Dict[str, List[Dict[str, Union[int, List[int], float]]]] = (
-        {}
-    )
+    detection_details: Dict[str, List[Dict[str, Union[int, List[int], float]]]] = {}
     for res in all_results:
         relative_key = str(res.video_path.relative_to(input_folder))
         file_detections = []
