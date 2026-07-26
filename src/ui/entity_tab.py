@@ -386,6 +386,7 @@ class EntityViewer(QtWidgets.QGraphicsView):
             instance.height,
             pen,
         )
+        self.boundingRect = QtCore.QRectF(instance.x, instance.y, instance.width, instance.height)
         self.fitInView(
             instance.x,
             instance.y,
@@ -400,3 +401,11 @@ class EntityViewer(QtWidgets.QGraphicsView):
             self.scale(factor, factor)
         else:
             super().wheelEvent(event)
+    
+    def doZoom(self, factor: int):
+        if factor == 0:
+            if hasattr(self, "boundingRect"):
+                self.fitInView(self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+        else:
+            self.scale(1 + factor / 10.0, 1 + factor / 10.0)
+

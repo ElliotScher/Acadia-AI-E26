@@ -363,6 +363,7 @@ class ImageViewer(QtWidgets.QGraphicsView):
         self.thisScene.clear()
         pixmap = QtGui.QPixmap(image.path)
         pixmapItem = self.thisScene.addPixmap(pixmap)
+        self.boundingRect = pixmapItem.boundingRect()
         pen = QtGui.QPen()
         pen.setWidth(int((pixmap.width() + pixmap.height()) / 500))
         for i in range(len(instances)):
@@ -383,3 +384,10 @@ class ImageViewer(QtWidgets.QGraphicsView):
             self.scale(factor, factor)
         else:
             super().wheelEvent(event)
+    
+    def doZoom(self, factor: int):
+        if factor == 0:
+            if hasattr(self, "boundingRect"):
+                self.fitInView(self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+        else:
+            self.scale(1 + factor / 10.0, 1 + factor / 10.0)

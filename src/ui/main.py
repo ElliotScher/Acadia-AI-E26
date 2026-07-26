@@ -146,6 +146,23 @@ class Root(QtWidgets.QMainWindow):
         )
         smDirection.addAction(aAnalyzeAllPoseDirection)
 
+        mView = self.menuBar().addMenu("View")
+        aZoomIn = QtGui.QAction("Zoom In Image", parent=self, shortcut=QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomIn))
+        aZoomIn.triggered.connect(
+            lambda : self.doZoom(1)
+        )
+        mView.addAction(aZoomIn)
+        aZoomOut = QtGui.QAction("Zoom Out Image", parent=self, shortcut=QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomOut))
+        aZoomOut.triggered.connect(
+            lambda : self.doZoom(-1)
+        )
+        mView.addAction(aZoomOut)
+        aZoomReset = QtGui.QAction("Reset Image Zoom", parent=self)
+        mView.addAction(aZoomReset)
+        aZoomReset.triggered.connect(
+            lambda : self.doZoom(0)
+        )
+
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
         self.session = Session(self.db)
@@ -180,6 +197,12 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
+    
+    def doZoom(self, factor: int):
+        if self.tabs.currentWidget() == self.imageTab:
+            self.imageTab.imageInfo.viewer.doZoom(factor)
+        else:
+            self.entitiesTab.entityInfo.viewer.doZoom(factor)
 
     @QtCore.Slot()
     def fileExportFiltered(self):
