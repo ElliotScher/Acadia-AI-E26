@@ -177,6 +177,7 @@ class ImageTab(QtWidgets.QWidget):
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
         self.count.setText(str(len(self.galleryModel.results)) + " images")
+        self.filters.updatePresentTypes(Instance.get_present_types(self.session))
 
     def getImages(self, filtered: bool) -> list[Image]:
         if not hasattr(self, "session"):
@@ -220,7 +221,9 @@ class ImageGallery(QtWidgets.QListView):
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
-        self.setStyleSheet("QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }")
+        self.setStyleSheet(
+            "QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }"
+        )
 
 
 class ImageInfo(QtWidgets.QGroupBox):
@@ -387,10 +390,12 @@ class ImageViewer(QtWidgets.QGraphicsView):
             self.scale(factor, factor)
         else:
             super().wheelEvent(event)
-    
+
     def doZoom(self, factor: int):
         if factor == 0:
             if hasattr(self, "boundingRect"):
-                self.fitInView(self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+                self.fitInView(
+                    self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio
+                )
         else:
             self.scale(1 + factor / 10.0, 1 + factor / 10.0)

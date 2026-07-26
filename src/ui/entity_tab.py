@@ -90,6 +90,7 @@ class EntitiesTab(QtWidgets.QWidget):
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
         self.count.setText(str(len(self.galleryModel.results)) + " entities")
+        self.filters.updatePresentTypes(Instance.get_present_types(self.session))
 
     def getEntities(self, filtered: bool) -> list[Entity]:
         if not hasattr(self, "session"):
@@ -131,7 +132,9 @@ class EntityGallery(QtWidgets.QListView):
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
-        self.setStyleSheet("QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }")
+        self.setStyleSheet(
+            "QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }"
+        )
 
     @QtCore.Slot()
     def invertSelection(self):
@@ -292,7 +295,11 @@ class EntityInfo(QtWidgets.QGroupBox):
             self.typeLabel.setText(
                 CLASS_ID_MAPPING[self.instances[0].type_id].title()
                 + ((" (" + ", ".join(directions) + ")") if len(directions) > 0 else "")
-                + ((" (" + str(round(entity.speed, 2)) + " mph)") if entity.speed is not None else "")
+                + (
+                    (" (" + str(round(entity.speed, 2)) + " mph)")
+                    if entity.speed is not None
+                    else ""
+                )
                 + " seen in:"
             )
 
@@ -389,7 +396,9 @@ class EntityViewer(QtWidgets.QGraphicsView):
             instance.height,
             pen,
         )
-        self.boundingRect = QtCore.QRectF(instance.x, instance.y, instance.width, instance.height)
+        self.boundingRect = QtCore.QRectF(
+            instance.x, instance.y, instance.width, instance.height
+        )
         self.fitInView(
             instance.x,
             instance.y,
@@ -404,11 +413,12 @@ class EntityViewer(QtWidgets.QGraphicsView):
             self.scale(factor, factor)
         else:
             super().wheelEvent(event)
-    
+
     def doZoom(self, factor: int):
         if factor == 0:
             if hasattr(self, "boundingRect"):
-                self.fitInView(self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+                self.fitInView(
+                    self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio
+                )
         else:
             self.scale(1 + factor / 10.0, 1 + factor / 10.0)
-

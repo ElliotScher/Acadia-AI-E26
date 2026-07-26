@@ -52,10 +52,7 @@ class Root(QtWidgets.QMainWindow):
         spinnerLayout = QtWidgets.QHBoxLayout()
         self.spinner = QtWidgets.QLabel("No background tasks.")
         spinnerLayout.addWidget(self.spinner)
-        self.progressBar = QtWidgets.QProgressBar(
-            minimum=0,
-            maximum=100
-        )
+        self.progressBar = QtWidgets.QProgressBar(minimum=0, maximum=100)
         self.progressBar.setVisible(False)
         spinnerLayout.addWidget(self.progressBar)
         layout.addLayout(spinnerLayout)
@@ -131,37 +128,35 @@ class Root(QtWidgets.QMainWindow):
         mAnalyze.addAction(aCalibrateSpeed)
 
         smDirection = mAnalyze.addMenu("Direction From Pose")
-        aAnalyzePoseDirection = QtGui.QAction(
-            "Filtered", self
-        )
+        aAnalyzePoseDirection = QtGui.QAction("Filtered", self)
         aAnalyzePoseDirection.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyzePoseDirection, True)
         )
         smDirection.addAction(aAnalyzePoseDirection)
-        aAnalyzeAllPoseDirection = QtGui.QAction(
-            "All", self
-        )
+        aAnalyzeAllPoseDirection = QtGui.QAction("All", self)
         aAnalyzeAllPoseDirection.triggered.connect(
             lambda: self.runAnalysis(self.doAnalyzePoseDirection, False)
         )
         smDirection.addAction(aAnalyzeAllPoseDirection)
 
         mView = self.menuBar().addMenu("View")
-        aZoomIn = QtGui.QAction("Zoom In Image", parent=self, shortcut=QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomIn))
-        aZoomIn.triggered.connect(
-            lambda : self.doZoom(1)
+        aZoomIn = QtGui.QAction(
+            "Zoom In Image",
+            parent=self,
+            shortcut=QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomIn),
         )
+        aZoomIn.triggered.connect(lambda: self.doZoom(1))
         mView.addAction(aZoomIn)
-        aZoomOut = QtGui.QAction("Zoom Out Image", parent=self, shortcut=QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomOut))
-        aZoomOut.triggered.connect(
-            lambda : self.doZoom(-1)
+        aZoomOut = QtGui.QAction(
+            "Zoom Out Image",
+            parent=self,
+            shortcut=QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.ZoomOut),
         )
+        aZoomOut.triggered.connect(lambda: self.doZoom(-1))
         mView.addAction(aZoomOut)
         aZoomReset = QtGui.QAction("Reset Image Zoom", parent=self)
         mView.addAction(aZoomReset)
-        aZoomReset.triggered.connect(
-            lambda : self.doZoom(0)
-        )
+        aZoomReset.triggered.connect(lambda: self.doZoom(0))
 
     def _fileOpen(self, path: str):
         self.db = get_db(os.path.join(path, "photos.db"))
@@ -197,7 +192,7 @@ class Root(QtWidgets.QMainWindow):
             self.imageTab.refreshGallery()
         else:
             self.entitiesTab.refreshGallery()
-    
+
     def doZoom(self, factor: int):
         if self.tabs.currentWidget() == self.imageTab:
             self.imageTab.imageInfo.viewer.doZoom(factor)
