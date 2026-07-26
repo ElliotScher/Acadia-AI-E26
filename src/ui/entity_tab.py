@@ -27,6 +27,9 @@ class EntitiesTab(QtWidgets.QWidget):
         super().__init__()
         layout = QtWidgets.QHBoxLayout(self)
 
+        splitter = QtWidgets.QSplitter()
+        splitter.setStyleSheet("QSplitter::handle { width: 2px; }")
+
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
@@ -48,10 +51,12 @@ class EntitiesTab(QtWidgets.QWidget):
         self.gallery = EntityGallery()
         gallerySideLayout.addWidget(self.gallery)
 
-        layout.addWidget(gallerySide)
+        splitter.addWidget(gallerySide)
         self.entityInfo = EntityInfo()
         self.entityInfo.imageOpened.connect(self.imageOpened.emit)
-        layout.addWidget(self.entityInfo)
+        splitter.addWidget(self.entityInfo)
+
+        layout.addWidget(splitter)
 
     @QtCore.Slot()
     def newselection(self):
@@ -213,12 +218,10 @@ class EntityInfo(QtWidgets.QGroupBox):
 
         self.setTitle("Entity Info")
         self.setMinimumSize(400, 500)
-        self.setMaximumWidth(400)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(self.alignment().AlignTop)
 
         self.viewer = EntityViewer()
-        self.viewer.resize(300, 150)
         self.viewer.hide()
         layout.addWidget(self.viewer)
 

@@ -111,6 +111,9 @@ class ImageTab(QtWidgets.QWidget):
         super().__init__()
         layout = QtWidgets.QHBoxLayout(self)
 
+        splitter = QtWidgets.QSplitter()
+        splitter.setStyleSheet("QSplitter::handle { width: 2px; }")
+
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
@@ -132,10 +135,12 @@ class ImageTab(QtWidgets.QWidget):
         self.gallery = ImageGallery()
         gallerySideLayout.addWidget(self.gallery)
 
-        layout.addWidget(gallerySide)
+        splitter.addWidget(gallerySide)
         self.imageInfo = ImageInfo()
         self.imageInfo.entityOpened.connect(self.entityOpened.emit)
-        layout.addWidget(self.imageInfo)
+        splitter.addWidget(self.imageInfo)
+
+        layout.addWidget(splitter)
 
     @QtCore.Slot()
     def newselection(self):
@@ -226,12 +231,10 @@ class ImageInfo(QtWidgets.QGroupBox):
         super().__init__()
         self.setTitle("Image Info")
         self.setMinimumSize(400, 500)
-        self.setMaximumWidth(400)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(self.alignment().AlignTop)
 
         self.viewer = ImageViewer()
-        self.viewer.resize(300, 150)
         self.viewer.hide()
         layout.addWidget(self.viewer)
 
