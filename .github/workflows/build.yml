@@ -41,6 +41,19 @@ jobs:
             libxcb-xinerama0 libxcb-xkb1 \
             tesseract-ocr
 
+      - name: Install libtiff5 (Qt TIFF plugin dependency)
+        run: |
+          # Ubuntu 24.04 dropped libtiff5 (libtiff.so.5) for the ABI-
+          # incompatible libtiff6, but PySide6's bundled Qt TIFF
+          # imageformat plugin still links against the old soname. Pull
+          # it from the last Ubuntu release that shipped it, scoped to
+          # just this one package so it can't shadow anything else.
+          echo "deb http://archive.ubuntu.com/ubuntu jammy main" | sudo tee /etc/apt/sources.list.d/jammy.list
+          sudo apt-get update
+          sudo apt-get install -y libtiff5
+          sudo rm /etc/apt/sources.list.d/jammy.list
+          sudo apt-get update
+
       - name: Install dependencies
         run: uv sync
 
