@@ -126,6 +126,7 @@ class EntityGallery(QtWidgets.QListView):
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
+        self.setStyleSheet("QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }")
 
     @QtCore.Slot()
     def invertSelection(self):
