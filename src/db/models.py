@@ -33,7 +33,6 @@ from cv2 import CAP_PROP_FPS, CAP_PROP_FRAME_COUNT
 from detection.classes import CLASS_ID_MAPPING
 from detection.direction.pedestrian_direction import process_single_image
 from detection.image_yolo import DetectionResult
-from detection.pose_direction import process_single_image
 from detection.video_yolo import open_video_capture
 from utility.geometryutils import Rectangle
 

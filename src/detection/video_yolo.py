@@ -83,9 +83,9 @@ def _frame_worker(
     device: str = "cpu",
     plate_model_name: Optional[str] = None,
     run_base_model: bool = True,
-    vehicle_merge: bool = True
+    vehicle_merge: bool = True,
     downsample_factor: int = 1,
-    write_frames: bool = False
+    write_frames: bool = False,
 ) -> None:
     """
     Worker thread that pulls frames from the queue, runs YOLO, and records detections.
@@ -149,71 +149,8 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            boxes_found: list[tuple[int, Rectangle, int, float, str]] = []
-
-            if thread_model is not None:
-                results = thread_model.predict(
-                    source=frame,
-                    conf=conf_threshold,
-                    classes=classes_list,
-                    verbose=False,
-                    device=device,
-                )
-
-                for r in results:
-                    for box in r.boxes:
-                        cls = int(box.cls[0])
-
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        w = x2 - x1
-                        h = y2 - y1
-
-                        # Apply crop region filter if provided
-                        if inclusion_region is not None:
-                            box_rect = Rectangle(x1, y1, w, h)
-                            if not Rectangle.bounding_box_intersects(
-                                box_rect, inclusion_region
-                            ):
-                                continue
-
-                        conf = float(box.conf[0])
-                        rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        if vehicle_merge: merged_cls = merge_vehicle_class_id(cls)
-                        else: merged_cls = cls
-                        label = CLASS_ID_MAPPING.get(merged_cls, str(merged_cls))
-                        boxes_found.append(
-                            (frame_idx, rect, merged_cls, conf, label)
-                        )
-
-            if thread_plate_model is not None:
-                plate_results = thread_plate_model.predict(
-                    source=frame,
-                    conf=conf_threshold,
-                    verbose=False,
-                    device=device,
-                )
-                for r in plate_results:
-                    for box in r.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        w = x2 - x1
-                        h = y2 - y1
-
-                        if inclusion_region is not None:
-                            box_rect = Rectangle(x1, y1, w, h)
-                            if not Rectangle.bounding_box_intersects(
-                                box_rect, inclusion_region
-                            ):
-                                continue
-
-                        conf = float(box.conf[0])
-                        rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                        boxes_found.append((frame_idx, rect, -1, conf, "license_plate"))
-
-            if boxes_found:
-                with results_lock:
-                    results_by_video[video_path].extend(boxes_found)
             if frame_idx % downsample_factor == 0:
-                boxes_found: list[tuple[int, Rectangle, int, float]] = []
+                boxes_found: list[tuple[int, Rectangle, int, float, str]] = []
 
                 if thread_model is not None:
                     results = thread_model.predict(
@@ -242,7 +179,14 @@ def _frame_worker(
 
                             conf = float(box.conf[0])
                             rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                            boxes_found.append((frame_idx, rect, cls, conf))
+                            if vehicle_merge:
+                                merged_cls = merge_vehicle_class_id(cls)
+                            else:
+                                merged_cls = cls
+                            label = CLASS_ID_MAPPING.get(merged_cls, str(merged_cls))
+                            boxes_found.append(
+                                (frame_idx, rect, merged_cls, conf, label)
+                            )
 
                 if thread_plate_model is not None:
                     plate_results = thread_plate_model.predict(
@@ -266,12 +210,12 @@ def _frame_worker(
 
                             conf = float(box.conf[0])
                             rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                            boxes_found.append((frame_idx, rect, -1, conf))
+                            boxes_found.append((frame_idx, rect, -1, conf, "license_plate"))
 
                 if boxes_found:
                     with results_lock:
                         results_by_video[video_path].extend(boxes_found)
-                
+
                     if write_frames:
                         framePath = os.path.join(
                             str(video_path) + "-frames", str(frame_idx) + ".jpg"
@@ -365,9 +309,9 @@ def process_videos(
                 device,
                 plate_model_name,
                 run_base_model,
-                vehicle_merge
+                vehicle_merge,
                 downsample_factor,
-                write_frames
+                write_frames,
             ),
         )
         t.daemon = True
