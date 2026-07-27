@@ -25,3 +25,7 @@ dependencies = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.uv]
+# fast-plate-ocr transitively installs opencv headless which overwrites full opencv, this stops that
+override-dependencies = ["opencv-python-headless; sys_platform == 'never'"]
