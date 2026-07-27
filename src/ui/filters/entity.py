@@ -40,26 +40,29 @@ class EntityTimeFilter(TimeFilter):
 
 class EntityTypeFilter(Filter):
     name = "Type"
+    types: list[int] = []
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.typeFilter = QtWidgets.QComboBox()
-        self.typeFilter.addItems(
-            [CLASS_ID_MAPPING[x].title() for x in CLASS_ID_MAPPING]
-        )
-        self.typeFilter.addItem("Ebike")
         self.typeFilter.currentIndexChanged.connect(self.changed)
         self.thisLayout.insertWidget(0, self.typeFilter)
 
+    def updatePresentTypes(self, types: list[int]):
+        self.types = types
+        value = self.typeFilter.currentText()
+        self.typeFilter.blockSignals(True)
+        self.typeFilter.clear()
+        self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title() for typeId in types])
+        self.typeFilter.setCurrentText(value)
+        self.typeFilter.blockSignals(False)
+
     @QtCore.Slot()
     def makeFilter(self, query: Select) -> Select:
-        if self.typeFilter.currentIndex() == len(CLASS_ID_MAPPING):
-            return query.where(Entity.ebike == True)  # noqa
-        else:
-            return query.join(Entity.instances).where(
-                Instance.type_id == self.typeFilter.currentIndex()
-            )
+        return query.join(Entity.instances).where(
+            Instance.type_id == self.types[self.typeFilter.currentIndex()]
+        )
 
 
 class ClusterSizeFilter(Filter):

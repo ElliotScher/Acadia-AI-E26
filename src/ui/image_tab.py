@@ -111,6 +111,9 @@ class ImageTab(QtWidgets.QWidget):
         super().__init__()
         layout = QtWidgets.QHBoxLayout(self)
 
+        splitter = QtWidgets.QSplitter()
+        splitter.setStyleSheet("QSplitter::handle { width: 2px; }")
+
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
@@ -132,10 +135,12 @@ class ImageTab(QtWidgets.QWidget):
         self.gallery = ImageGallery()
         gallerySideLayout.addWidget(self.gallery)
 
-        layout.addWidget(gallerySide)
+        splitter.addWidget(gallerySide)
         self.imageInfo = ImageInfo()
         self.imageInfo.entityOpened.connect(self.entityOpened.emit)
-        layout.addWidget(self.imageInfo)
+        splitter.addWidget(self.imageInfo)
+
+        layout.addWidget(splitter)
 
     @QtCore.Slot()
     def newselection(self):
@@ -172,6 +177,7 @@ class ImageTab(QtWidgets.QWidget):
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
         self.count.setText(str(len(self.galleryModel.results)) + " images")
+        self.filters.updatePresentTypes(Instance.get_present_types(self.session))
 
     def getImages(self, filtered: bool) -> list[Image]:
         if not hasattr(self, "session"):
@@ -215,6 +221,9 @@ class ImageGallery(QtWidgets.QListView):
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
+        self.setStyleSheet(
+            "QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }"
+        )
 
 
 class ImageInfo(QtWidgets.QGroupBox):
@@ -225,12 +234,10 @@ class ImageInfo(QtWidgets.QGroupBox):
         super().__init__()
         self.setTitle("Image Info")
         self.setMinimumSize(400, 500)
-        self.setMaximumWidth(400)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(self.alignment().AlignTop)
 
         self.viewer = ImageViewer()
-        self.viewer.resize(300, 150)
         self.viewer.hide()
         layout.addWidget(self.viewer)
 
@@ -362,6 +369,7 @@ class ImageViewer(QtWidgets.QGraphicsView):
         self.thisScene.clear()
         pixmap = QtGui.QPixmap(image.path)
         pixmapItem = self.thisScene.addPixmap(pixmap)
+        self.boundingRect = pixmapItem.boundingRect()
         pen = QtGui.QPen()
         pen.setWidth(int((pixmap.width() + pixmap.height()) / 500))
         for i in range(len(instances)):
@@ -382,3 +390,12 @@ class ImageViewer(QtWidgets.QGraphicsView):
             self.scale(factor, factor)
         else:
             super().wheelEvent(event)
+
+    def doZoom(self, factor: int):
+        if factor == 0:
+            if hasattr(self, "boundingRect"):
+                self.fitInView(
+                    self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio
+                )
+        else:
+            self.scale(1 + factor / 10.0, 1 + factor / 10.0)

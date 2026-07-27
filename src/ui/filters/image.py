@@ -57,6 +57,7 @@ class ImageDateFilter(DateFilter):
 class EntityFilter(Filter):
     name = "Entity"
     expanded: bool
+    types: list[int] = []
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -77,8 +78,6 @@ class EntityFilter(Filter):
 
         self.typeFilter = QtWidgets.QComboBox()
         self.typeFilter.addItems(["Anything"])
-        for typeId in CLASS_ID_MAPPING:
-            self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title()])
         self.typeFilter.setMinimumWidth(100)
         self.typeFilter.currentTextChanged.connect(self.changed)
         self.thisLayout.insertWidget(3, self.typeFilter)
@@ -112,6 +111,16 @@ class EntityFilter(Filter):
         self.minConfidenceLabel.setVisible(self.expanded)
         self.expandButton.setText("<" if self.expanded else ">")
 
+    def updatePresentTypes(self, types: list[int]):
+        self.types = types
+        value = self.typeFilter.currentText()
+        self.typeFilter.blockSignals(True)
+        self.typeFilter.clear()
+        self.typeFilter.addItems(["Anything"])
+        self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title() for typeId in types])
+        self.typeFilter.setCurrentText(value)
+        self.typeFilter.blockSignals(False)
+
     @QtCore.Slot()
     def makeFilter(self, query: Select):
         if self.typeFilter.currentIndex() == 0:
@@ -121,7 +130,7 @@ class EntityFilter(Filter):
         else:
             query = query.join(Image.instances).where(
                 and_(
-                    Instance.type_id == self.typeFilter.currentIndex() - 1,
+                    Instance.type_id == self.types[self.typeFilter.currentIndex() - 1],
                     Instance.confidence >= self.minConfidence.value(),
                 )
             )
@@ -143,6 +152,7 @@ class EntityFilter(Filter):
 class NoEntityFilter(Filter):
     name = "No Entity"
     expanded: bool
+    types: list[int] = []
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -150,8 +160,6 @@ class NoEntityFilter(Filter):
         self.thisLayout.insertWidget(0, QtWidgets.QLabel("No"))
 
         self.typeFilter = QtWidgets.QComboBox()
-        for typeId in CLASS_ID_MAPPING:
-            self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title()])
         self.typeFilter.setMinimumWidth(100)
         self.typeFilter.currentTextChanged.connect(self.changed)
         self.thisLayout.insertWidget(1, self.typeFilter)
@@ -182,6 +190,15 @@ class NoEntityFilter(Filter):
         self.maxConfidenceLabel.setVisible(self.expanded)
         self.expandButton.setText("<" if self.expanded else ">")
 
+    def updatePresentTypes(self, types: list[int]):
+        self.types = types
+        value = self.typeFilter.currentText()
+        self.typeFilter.blockSignals(True)
+        self.typeFilter.clear()
+        self.typeFilter.addItems([CLASS_ID_MAPPING[typeId].title() for typeId in types])
+        self.typeFilter.setCurrentText(value)
+        self.typeFilter.blockSignals(False)
+
     @QtCore.Slot()
     def makeFilter(self, query: Select):
         return (
@@ -189,7 +206,7 @@ class NoEntityFilter(Filter):
                 Instance,
                 and_(
                     Image.id == Instance.image_id,
-                    Instance.type_id == self.typeFilter.currentIndex(),
+                    Instance.type_id == self.types[self.typeFilter.currentIndex()],
                 ),
             )
             .group_by(Image.id)
