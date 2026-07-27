@@ -17,35 +17,27 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-# Shown immediately while the heavier imports (torch,
-# ultralytics, PySide6) load, since those otherwise leave the user staring
-# at nothing for several seconds. main.py closes this once the main window
-# is on screen.
-if (sys.platform != 'darwin'):
-    splash = Splash(
-        'assets/splash.png',
-        binaries=a.binaries,
-        datas=a.datas,
-        text_pos=(20, 295),
-        text_size=11,
-        text_color='#ebeef2',
-        text_default='Starting...',
-        minify_script=True,
-        always_on_top=True,
-    )
+splash = Splash(
+    'assets/splash.png',
+    binaries=a.binaries,
+    datas=a.datas,
+    text_pos=(20, 295),
+    text_size=11,
+    text_color='#ebeef2',
+    text_default='Starting...',
+    minify_script=True,
+    always_on_top=True,
+) if sys.platform != 'darwin' else None
 
 exe = EXE(
     pyz,
     a.scripts,
-    splash,
+    splash if splash is not None else [],
     exclude_binaries=True,
     name='main',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    # UPX-compressed executables are one of the most common triggers for
-    # antivirus heuristics (packed/high-entropy binaries look like malware
-    # droppers), so leave binaries uncompressed.
     upx=False,
     console=False,
     disable_windowed_traceback=False,
@@ -55,16 +47,11 @@ exe = EXE(
     entitlements_file=None,
 )
 
-# onedir (COLLECT) rather than onefile: a onefile build self-extracts to a
-# temp directory on every launch, which is the other big antivirus
-# heuristics trigger for PyInstaller apps, and it also means every startup
-# pays an unpack cost on top of the import cost the splash screen is
-# already covering.
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    splash.binaries,
+    splash.binaries if splash is not None else [],
     strip=False,
     upx=False,
     upx_exclude=[],
