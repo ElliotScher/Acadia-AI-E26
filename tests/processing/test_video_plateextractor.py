@@ -153,7 +153,7 @@ def test_run_video_plate_extraction_writes_manifest(tmp_path):
     mock_cap.read.side_effect = [(True, frame), (False, None)]
 
     with (
-        patch("src.processing.video_plateextractor.YOLO", return_value=model),
+        patch("src.processing.video_plateextractor.load_model", return_value=model),
         patch(
             "src.processing.video_plateextractor.cv2.VideoCapture",
             return_value=mock_cap,

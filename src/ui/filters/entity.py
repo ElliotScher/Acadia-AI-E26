@@ -3,7 +3,7 @@ from sqlalchemy import Select, and_, func, select
 
 from db.models import Entity, Instance, Image
 from detection.classes import CLASS_ID_MAPPING
-from filters import DateFilter, Filter, TimeFilter
+from ui.filters import DateFilter, Filter, TimeFilter
 
 
 class EntityDateFilter(DateFilter):

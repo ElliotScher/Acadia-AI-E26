@@ -2,6 +2,35 @@ from typing import Dict, List
 
 TARGET_CLASSES: List[int] = [0, 1, 2, 3, 5, 7]
 
+# Buses (5) and trucks (7) are tracked as ordinary vehicle traffic rather
+# than modeled as their own category, so every detector/report in the
+# pipeline folds them into "car" (2) - shared here so video_yolo.py's report
+# and any downstream consumer agree on the same convention. Merging is keyed
+# on the numeric COCO id rather than a resolved string name: the id is the
+# canonical value a YOLO model actually predicts, while a name (whether from
+# CLASS_ID_MAPPING or a model's own .names) is just a display lookup on top
+# of it and shouldn't be re-parsed to decide classification.
+_VEHICLE_MERGE_CLASS_IDS = {5, 7}
+MERGED_VEHICLE_CLASS_ID = 2
+
+
+def merge_vehicle_class_id(class_id: int) -> int:
+    """
+    Folds the "bus" (5) and "truck" (7) COCO class ids into "car" (2); every
+    other id passes through unchanged.
+
+    Args:
+        class_id (int): A raw COCO class id.
+
+    Returns:
+        int: The merged class id.
+    """
+    return (
+        MERGED_VEHICLE_CLASS_ID
+        if class_id in _VEHICLE_MERGE_CLASS_IDS
+        else class_id
+    )
+
 CLASS_ID_MAPPING: Dict[int, str] = {
     0: "person",
     1: "bicycle",

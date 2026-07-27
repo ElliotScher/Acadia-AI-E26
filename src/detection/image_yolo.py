@@ -22,6 +22,7 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from utility.geometryutils import Rectangle
+from utility.yoloutility import load_model
 
 # COCO classes: 0=person, 2=car, 5=bus, 7=truck
 DEFAULT_TARGET_CLASSES = [0, 2, 5, 7]
@@ -42,15 +43,6 @@ class DetectionResult:
 
     image_path: Path
     boxes: List[Tuple[Rectangle, int, float]]  # List of (rectangle, id, confidence)
-
-def load_model(model_name: str) -> YOLO:
-    """
-    Loads and returns a YOLO model from the given path or name.
-
-    Args:
-        model_name (str): YOLO weights name.
-    """
-    return YOLO(model_name)
 
 
 def process_images(
@@ -82,7 +74,7 @@ def process_images(
     results_list: List[DetectionResult] = []
 
     try:
-        thread_model = YOLO(model_name)
+        thread_model = load_model(model_name)
     except Exception as e:
         logger.error("Failed to load YOLO model '%s': %s", model_name, e)
         if progress_bar:
@@ -319,7 +311,7 @@ def main() -> None:
 
     total_counts: Dict[str, int] = {}
     try:
-        model = YOLO(args.model)
+        model = load_model(args.model)
         for cls in target_classes:
             if cls in model.names:
                 label = model.names[cls]
