@@ -21,17 +21,18 @@ pyz = PYZ(a.pure)
 # ultralytics, PySide6) load, since those otherwise leave the user staring
 # at nothing for several seconds. main.py closes this once the main window
 # is on screen.
-splash = Splash(
-    'assets/splash.png',
-    binaries=a.binaries,
-    datas=a.datas,
-    text_pos=(20, 295),
-    text_size=11,
-    text_color='#ebeef2',
-    text_default='Starting...',
-    minify_script=True,
-    always_on_top=True,
-)
+if (sys.platform != 'darwin'):
+    splash = Splash(
+        'assets/splash.png',
+        binaries=a.binaries,
+        datas=a.datas,
+        text_pos=(20, 295),
+        text_size=11,
+        text_color='#ebeef2',
+        text_default='Starting...',
+        minify_script=True,
+        always_on_top=True,
+    )
 
 exe = EXE(
     pyz,
