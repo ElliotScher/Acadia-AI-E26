@@ -60,11 +60,16 @@ jobs:
       - name: Build executable
         run: uv run pyinstaller main.spec
 
+      - name: Package build artifact
+        run: |
+          cd dist
+          zip -r ../acadia-ai-e26-linux-x86_64.zip main
+
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: acadia-ai-e26-linux-x86_64
-          path: dist/main
+          path: acadia-ai-e26-linux-x86_64.zip
           if-no-files-found: error
 
   build-windows:
@@ -89,11 +94,17 @@ jobs:
       - name: Build executable
         run: uv run pyinstaller main.spec
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: iscc installer\main.iss
+
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: acadia-ai-e26-windows-x86_64
-          path: dist/main.exe
+          path: installer-output/ImageAnalyzerSetup.exe
           if-no-files-found: error
 
   build-macos:
@@ -118,11 +129,16 @@ jobs:
       - name: Build executable
         run: uv run pyinstaller main.spec
 
+      - name: Package build artifact
+        run: |
+          cd dist
+          zip -r -y ../acadia-ai-e26-macos-arm64.zip main.app
+
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: acadia-ai-e26-macos-arm64
-          path: dist/main
+          path: acadia-ai-e26-macos-arm64.zip
           if-no-files-found: error
 
   release:
