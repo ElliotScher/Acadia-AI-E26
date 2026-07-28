@@ -6,6 +6,9 @@ import platform
 import subprocess
 import sys
 
+os.environ.setdefault("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
+os.environ.setdefault("YOLO_AUTOINSTALL", "False")
+
 from cluster_dialog import ClusterDialog
 from entity_tab import EntitiesTab
 from export_dialog import ExportDialog, ExportOptions
@@ -333,7 +336,11 @@ class Root(QtWidgets.QMainWindow):
             if platform.system() == "Darwin":
                 subprocess.call(("open", options.path))
             elif platform.system() == "Windows":
-                subprocess.call(("start", options.path), shell=True)
+                subprocess.call(
+                    ("start", options.path),
+                    shell=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
             else:
                 subprocess.call(("xdg-open", options.path))
 

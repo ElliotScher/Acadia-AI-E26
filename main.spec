@@ -6,7 +6,7 @@ a = Analysis(
     ['src/ui/main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('models', 'models')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
