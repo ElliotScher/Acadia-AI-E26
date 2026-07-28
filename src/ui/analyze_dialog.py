@@ -89,6 +89,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
         threadCountLayout.addWidget(self.threadCount)
         layout.addLayout(threadCountLayout)
 
+        self.mergeCheckbox = QtWidgets.QCheckBox("Merge Similar Entity Types")
+        layout.addWidget(self.mergeCheckbox)
+
         if video:
             downsampleLayout = QtWidgets.QHBoxLayout()
             downsampleLayout.addWidget(QtWidgets.QLabel("Downsample factor"))
@@ -135,6 +138,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                         targetClasses,
                         self.downsampleFactor.value(),
                         threadCount,
+                        self.mergeCheckbox.isChecked(),
                     ),
                 )
                 thread.result.connect(self.finishVideoAnalysis)
@@ -146,6 +150,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                         files,
                         self.minConfidence.value(),
                         targetClasses,
+                        self.mergeCheckbox.isChecked(),
                     ),
                 )
                 thread.result.connect(self.finishAnalysis)
@@ -159,6 +164,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         images: list[tuple[int, str]],
         minConfidence: float,
         targetClasses: list[int],
+        mergeVehicles: bool,
         _,
     ) -> list[DetectionResult]:
         results = process_images(
@@ -168,6 +174,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             None,
             minConfidence,
             targetClasses,
+            vehicle_merge=mergeVehicles,
         )
         return results
 
@@ -178,6 +185,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         targetClasses: list[int],
         downsampleFactor: int,
         threadCount: int,
+        mergeVehicles: bool,
         thread: upl.Async,
     ) -> list[VideoDetectionResult]:
         total_frames = 0
@@ -202,6 +210,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             threadCount,
             downsample_factor=downsampleFactor,
             write_frames=True,
+            vehicle_merge=mergeVehicles,
         )
         return results
 
