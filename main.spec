@@ -32,13 +32,18 @@ splash = Splash(
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     splash if splash is not None else [],
-    exclude_binaries=True,
+    splash.binaries if splash is not None else [],
+    [],
     name='main',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -47,20 +52,9 @@ exe = EXE(
     entitlements_file=None,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    splash.binaries if splash is not None else [],
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name='main',
-)
-
 if sys.platform == 'darwin':
     app = BUNDLE(
-        coll,
+        exe,
         name='main.app',
         icon=None,
         bundle_identifier=None,

@@ -1,10 +1,11 @@
 ; Inno Setup script for Image Analyzer.
-; Packages the onedir PyInstaller output (dist\main\*, built via main.spec)
-; into a Setup.exe with a Start Menu entry, optional desktop shortcut, and
-; a real uninstaller - the Windows equivalent of main.spec's macOS BUNDLE().
+; Packages the onefile PyInstaller output (dist\main.exe, built via
+; main.spec) into a Setup.exe with a Start Menu entry, optional desktop
+; shortcut, and a real uninstaller - the Windows equivalent of main.spec's
+; macOS BUNDLE().
 ;
 ; Built in CI with: iscc installer\main.iss (run from the repo root, after
-; `pyinstaller main.spec` has populated dist\main).
+; `pyinstaller main.spec` has produced dist\main.exe).
 
 #define MyAppName "Image Analyzer"
 #define MyAppVersion "0.1.0"
@@ -37,9 +38,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-; The whole onedir output (exe + Python runtime + Qt/torch/etc. libs) has to
-; ship together - none of it works if split up.
-Source: "..\dist\main\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\main.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
