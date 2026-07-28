@@ -384,7 +384,9 @@ def print_direction_benchmark_summary(
     print(stat_line("Images evaluated", str(total)))
     print("-" * BANNER_WIDTH)
     print(
-        stat_line("Exact direction match", f"{accuracy * 100:.2f}% ({exact_matches}/{total})")
+        stat_line(
+            "Exact direction match", f"{accuracy * 100:.2f}% ({exact_matches}/{total})"
+        )
     )
     print("=" * BANNER_WIDTH)
 
@@ -408,9 +410,7 @@ def print_direction_benchmark_summary(
 
     if confusion_matrix:
         print()
-        print(
-            "CONFUSION MATRIX (rows=truth, cols=predicted)".center(BANNER_WIDTH, "-")
-        )
+        print("CONFUSION MATRIX (rows=truth, cols=predicted)".center(BANNER_WIDTH, "-"))
         gt_labels = sorted(confusion_matrix)
         col_w = max(len("truth"), max(len(l) for l in prediction_labels))
         header = f"{'':<{col_w}}  " + "  ".join(
@@ -485,7 +485,8 @@ def render_direction_html_report(
     confusion_table = html_table(
         ["Truth \\ Predicted"] + prediction_labels,
         [
-            [gt_label] + [confusion_matrix[gt_label].get(l, 0) for l in prediction_labels]
+            [gt_label]
+            + [confusion_matrix[gt_label].get(l, 0) for l in prediction_labels]
             for gt_label in sorted(confusion_matrix)
         ],
     )

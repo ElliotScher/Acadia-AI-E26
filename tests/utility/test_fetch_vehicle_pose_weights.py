@@ -9,7 +9,9 @@ def test_fetch_skips_download_if_already_present(tmp_path):
     dest = tmp_path / "last.pt"
     dest.write_bytes(b"already here")
 
-    with patch("src.utility.fetch_vehicle_pose_weights.gdown.download") as mock_download:
+    with patch(
+        "src.utility.fetch_vehicle_pose_weights.gdown.download"
+    ) as mock_download:
         result = fetch_vehicle_pose_weights(dest)
 
     mock_download.assert_not_called()
@@ -26,7 +28,8 @@ def test_fetch_downloads_when_missing(tmp_path):
         Path(output).write_bytes(b"downloaded weights")
 
     with patch(
-        "src.utility.fetch_vehicle_pose_weights.gdown.download", side_effect=fake_download
+        "src.utility.fetch_vehicle_pose_weights.gdown.download",
+        side_effect=fake_download,
     ) as mock_download:
         result = fetch_vehicle_pose_weights(dest)
 
@@ -46,7 +49,8 @@ def test_fetch_force_redownloads_even_if_present(tmp_path):
         Path(output).write_bytes(b"fresh")
 
     with patch(
-        "src.utility.fetch_vehicle_pose_weights.gdown.download", side_effect=fake_download
+        "src.utility.fetch_vehicle_pose_weights.gdown.download",
+        side_effect=fake_download,
     ) as mock_download:
         fetch_vehicle_pose_weights(dest, force=True)
 

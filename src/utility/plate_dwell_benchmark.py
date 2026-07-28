@@ -18,14 +18,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AbstractSet, Any, Dict, List, Optional, Set, Tuple, Union
 
-import matplotlib
-
-# Headless/non-interactive backend - this script generates chart images to a
-# file or embeds them in HTML, it never shows a window, and the default
-# backend would otherwise try (and fail) to open a display in a server/CI
-# environment. Must be set before pyplot is imported.
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 
 from src.processing.plate_dwellprofiler import (
@@ -398,6 +390,18 @@ def render_dwell_time_histogram(
         bytes: PNG image data. Empty if neither side has a countable,
             positive dwell time to plot.
     """
+    # Imported lazily - matplotlib is only needed by this rendering path, and
+    # pulling it in at module scope would slow down every import of this
+    # module (and every caller's startup) even when no chart is ever drawn.
+    import matplotlib
+
+    # Headless/non-interactive backend - this script generates chart images to
+    # a file or embeds them in HTML, it never shows a window, and the default
+    # backend would otherwise try (and fail) to open a display in a
+    # server/CI environment. Must be set before pyplot is imported.
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     gt_values = [v for v in _counted_dwell_times(ground_truth_matches) if v > 0]
     ocr_values = [v for v in _counted_dwell_times(ocr_matches) if v > 0]
 

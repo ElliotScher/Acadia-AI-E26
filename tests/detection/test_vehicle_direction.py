@@ -34,7 +34,9 @@ class _FakeDatum:
         self.boxes = boxes
 
 
-def _make_datum(front_x=800.0, rear_x=100.0, front_conf=0.9, rear_conf=0.9, box=(10, 20, 300, 400)):
+def _make_datum(
+    front_x=800.0, rear_x=100.0, front_conf=0.9, rear_conf=0.9, box=(10, 20, 300, 400)
+):
     """
     Builds a single-instance fake pose result: every FRONT_KEYPOINTS index
     sits at front_x with front_conf confidence, every REAR_KEYPOINTS index

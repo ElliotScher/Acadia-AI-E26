@@ -1,0 +1,218 @@
+name: Build executable
+
+on:
+  push:
+#    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          lfs: true
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 libegl1 libopengl0 \
+            libxkbcommon0 libxkbcommon-x11-0 \
+            libdbus-1-3 libfontconfig1 libfreetype6 \
+            libx11-6 libx11-xcb1 libxext6 libxfixes3 libxi6 libxrender1 \
+            libxcb1 libxcb-cursor0 libxcb-glx0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-render0 \
+            libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 \
+            libxcb-xinerama0 libxcb-xkb1 \
+            tesseract-ocr
+
+      - name: Install libtiff5 (Qt TIFF plugin dependency)
+        run: |
+          # Ubuntu 24.04 dropped libtiff5 (libtiff.so.5) for the ABI-
+          # incompatible libtiff6, but PySide6's bundled Qt TIFF
+          # imageformat plugin still links against the old soname. Pull
+          # it from the last Ubuntu release that shipped it, scoped to
+          # just this one package so it can't shadow anything else.
+          echo "deb http://archive.ubuntu.com/ubuntu jammy main" | sudo tee /etc/apt/sources.list.d/jammy.list
+          sudo apt-get update
+          sudo apt-get install -y libtiff5
+          sudo rm /etc/apt/sources.list.d/jammy.list
+          sudo apt-get update
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build executable
+        run: uv run pyinstaller main.spec
+
+      - name: Upload raw binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: raw-binary-linux-x86_64
+          path: dist/main
+          if-no-files-found: error
+
+  package-linux:
+    needs: build-linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download raw binary artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: raw-binary-linux-x86_64
+          path: dist
+
+      - name: Package build artifact
+        run: |
+          cd dist
+          zip -r ../acadia-ai-e26-linux-x86_64.zip main
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acadia-ai-e26-linux-x86_64
+          path: acadia-ai-e26-linux-x86_64.zip
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          lfs: true
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build executable
+        run: uv run pyinstaller main.spec
+
+      - name: Upload raw binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: raw-binary-windows-x86_64
+          path: dist/main.exe
+          if-no-files-found: error
+
+  package-windows:
+    needs: build-windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download raw binary artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: raw-binary-windows-x86_64
+          path: dist
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: iscc installer\main.iss
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acadia-ai-e26-windows-x86_64
+          path: installer-output/ImageAnalyzerSetup.exe
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          lfs: true
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build executable
+        run: uv run pyinstaller main.spec
+
+      - name: Upload raw binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: raw-binary-macos-arm64
+          path: dist/main.app
+          if-no-files-found: error
+
+  package-macos:
+    needs: build-macos
+    runs-on: macos-latest
+
+    steps:
+      - name: Download raw binary artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: raw-binary-macos-arm64
+          path: dist/main.app
+
+      - name: Package build artifact
+        run: |
+          cd dist
+          zip -r -y ../acadia-ai-e26-macos-arm64.zip main.app
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acadia-ai-e26-macos-arm64
+          path: acadia-ai-e26-macos-arm64.zip
+          if-no-files-found: error
+
+  release:
+    needs: [ package-linux, package-windows, package-macos ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: acadia-ai-e26-*
+          path: dist
+          merge-multiple: false
+
+      - name: Create release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          files: dist/*/*

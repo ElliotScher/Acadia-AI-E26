@@ -618,7 +618,9 @@ def _report_match_stats(
     csv_mean_distribution = comparator.distributions().mean(axis=0)
     stats = []
     for label, counts in zip(labels, reference_counts):
-        distribution = SpeedDistributionComparator._as_distribution(np.asarray(counts, dtype=float))
+        distribution = SpeedDistributionComparator._as_distribution(
+            np.asarray(counts, dtype=float)
+        )
         js = _jensen_shannon_divergence(distribution, csv_mean_distribution)
         overlap = _overlap_coefficient(distribution, csv_mean_distribution)
         stats.append((label, js, overlap))
@@ -660,8 +662,12 @@ def _format_final_statistics(
     ]
 
     if reference_counts:
-        for label, js, overlap in _report_match_stats(comparator, reference_counts, reference_labels):
-            lines.append(f"Report match — {label}: JS div {js:.3f}, overlap {overlap:.3f}")
+        for label, js, overlap in _report_match_stats(
+            comparator, reference_counts, reference_labels
+        ):
+            lines.append(
+                f"Report match — {label}: JS div {js:.3f}, overlap {overlap:.3f}"
+            )
 
     return "\n".join(lines)
 
@@ -713,7 +719,9 @@ def _format_intuitive_summary(
     if not results:
         lines.append("    Pairs compared: 0 (only one date sampled)")
     else:
-        unstable_pairs = [r for r in results if not r.is_stable(js_threshold, overlap_threshold)]
+        unstable_pairs = [
+            r for r in results if not r.is_stable(js_threshold, overlap_threshold)
+        ]
         worst = max(results, key=lambda r: r.jensen_shannon_divergence)
         lines.append(
             f"    Pairs within threshold: {len(results) - len(unstable_pairs)}/{len(results)}"
@@ -730,8 +738,14 @@ def _format_intuitive_summary(
         lines.append("    No --report given.")
     else:
         for label, js, overlap in report_stats:
-            match = "PASS" if js <= js_threshold and overlap >= overlap_threshold else "FAIL"
-            lines.append(f"    {label}: JS divergence {js:.3f}, overlap {overlap:.3f} ({match})")
+            match = (
+                "PASS"
+                if js <= js_threshold and overlap >= overlap_threshold
+                else "FAIL"
+            )
+            lines.append(
+                f"    {label}: JS divergence {js:.3f}, overlap {overlap:.3f} ({match})"
+            )
 
     return "\n".join(lines)
 
@@ -825,7 +839,9 @@ def load_report_counts(
         # is what callers pass through here - normalize so a CSV direction
         # of e.g. "Left" still matches the report's lowercase "left".
         direction_lower = direction.lower()
-        entities = [e for e in entities if str(e.get("direction")).lower() == direction_lower]
+        entities = [
+            e for e in entities if str(e.get("direction")).lower() == direction_lower
+        ]
 
     bins_array = np.asarray(speed_bins, dtype=float)
     bins_min, bins_max = bins_array.min(), bins_array.max()
@@ -856,7 +872,9 @@ def load_report_counts(
             report_path,
             filter_note,
         )
-        speeds = _minmax_scale(np.asarray(relative_speeds, dtype=float), bins_min, bins_max)
+        speeds = _minmax_scale(
+            np.asarray(relative_speeds, dtype=float), bins_min, bins_max
+        )
 
     in_range = (speeds >= bins_min) & (speeds <= bins_max)
     trimmed = int((~in_range).sum())
@@ -883,7 +901,9 @@ def load_report_counts(
     return counts
 
 
-def _minmax_scale(values: np.ndarray, target_min: float, target_max: float) -> np.ndarray:
+def _minmax_scale(
+    values: np.ndarray, target_min: float, target_max: float
+) -> np.ndarray:
     source_min, source_max = values.min(), values.max()
     if source_max == source_min:
         return np.full_like(values, (target_min + target_max) / 2)
@@ -953,7 +973,9 @@ def plot_ridgeline(
     """
     n = len(comparator.counts)
     if n > max_rows:
-        indices = sorted(set(np.linspace(0, n - 1, max_rows).round().astype(int).tolist()))
+        indices = sorted(
+            set(np.linspace(0, n - 1, max_rows).round().astype(int).tolist())
+        )
     else:
         indices = list(range(n))
 
@@ -1011,7 +1033,9 @@ def plot_ridgeline(
         baseline = baselines[rank]
         y = baseline + curves[rank] * scale
         color = _RIDGELINE_CMAP(i / max(n - 1, 1))
-        ax.fill_between(x_fine, baseline, y, color=color, alpha=0.92, linewidth=0, zorder=rank)
+        ax.fill_between(
+            x_fine, baseline, y, color=color, alpha=0.92, linewidth=0, zorder=rank
+        )
         ax.plot(
             x_fine,
             y,
@@ -1094,10 +1118,17 @@ def plot_ridgeline(
         # historical stack" as a group, distinct from each report's color and
         # from the --last-n highlight box.
         historical_patch = PlotRectangle(
-            (0, 0), 0, 0, facecolor=RIDGELINE_LINE_COLOR, edgecolor="none", label="Car Counter"
+            (0, 0),
+            0,
+            0,
+            facecolor=RIDGELINE_LINE_COLOR,
+            edgecolor="none",
+            label="Car Counter",
         )
         ax.add_patch(historical_patch)
-        ax.legend(loc="upper right", frameon=False, labelcolor=RIDGELINE_MUTED_TEXT_COLOR)
+        ax.legend(
+            loc="upper right", frameon=False, labelcolor=RIDGELINE_MUTED_TEXT_COLOR
+        )
 
     ax.set_yticks(tick_positions)
     ax.set_yticklabels(tick_labels)
@@ -1146,7 +1177,9 @@ def _ridgeline_plot_path(args: argparse.Namespace, direction: str) -> Path:
     if args.ridgeline_plot:
         base = Path(args.ridgeline_plot)
         return base.with_name(f"{base.stem}_{direction}{base.suffix}")
-    return Path(args.csv_path).with_name(f"{Path(args.csv_path).stem}_{direction}_ridgeline.png")
+    return Path(args.csv_path).with_name(
+        f"{Path(args.csv_path).stem}_{direction}_ridgeline.png"
+    )
 
 
 def main() -> None:
@@ -1278,7 +1311,9 @@ def main() -> None:
         # --last-n; comparator itself is kept at full history so the
         # ridgeline plot can still show every row, with a box around this
         # subset.
-        analysis_comparator = comparator.tail(args.last_n) if args.last_n else comparator
+        analysis_comparator = (
+            comparator.tail(args.last_n) if args.last_n else comparator
+        )
 
         results = analysis_comparator.compare_all()
         print(_format_results_table(results))
@@ -1307,16 +1342,24 @@ def main() -> None:
                         e,
                     )
                     sys.exit(1)
-                label = report_labels[i] if i < len(report_labels) else Path(report_path).stem
+                label = (
+                    report_labels[i]
+                    if i < len(report_labels)
+                    else Path(report_path).stem
+                )
                 reference_labels.append(label)
 
         try:
             print(
-                _format_final_statistics(analysis_comparator, reference_counts, reference_labels)
+                _format_final_statistics(
+                    analysis_comparator, reference_counts, reference_labels
+                )
             )
         except ValueError as e:
             logger.error(
-                "Could not compute final statistics for direction '%s': %s", direction, e
+                "Could not compute final statistics for direction '%s': %s",
+                direction,
+                e,
             )
 
         if not args.no_ridgeline_plot:
@@ -1335,10 +1378,14 @@ def main() -> None:
                 )
             except ValueError as e:
                 logger.error(
-                    "Could not generate ridgeline plot for direction '%s': %s", direction, e
+                    "Could not generate ridgeline plot for direction '%s': %s",
+                    direction,
+                    e,
                 )
 
-        stable = analysis_comparator.is_stable(args.js_threshold, args.overlap_threshold)
+        stable = analysis_comparator.is_stable(
+            args.js_threshold, args.overlap_threshold
+        )
         verdict = "STABLE" if stable else "NOT STABLE"
         logger.info(
             "Verdict (%s): %s (js_divergence <= %.4f and overlap >= %.4f required for "

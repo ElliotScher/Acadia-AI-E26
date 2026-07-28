@@ -44,8 +44,12 @@ from src.utility.direction_benchmark_common import (
     build_confusion_matrix,
     compute_label_metrics,
 )
-from src.utility.direction_benchmark_common import compute_label_counts as _compute_label_counts
-from src.utility.direction_benchmark_common import find_labeled_images as _find_labeled_images
+from src.utility.direction_benchmark_common import (
+    compute_label_counts as _compute_label_counts,
+)
+from src.utility.direction_benchmark_common import (
+    find_labeled_images as _find_labeled_images,
+)
 from src.utility.direction_benchmark_common import label_from_filename
 from src.utility.direction_benchmark_common import (
     print_direction_benchmark_summary,
@@ -115,7 +119,13 @@ def render_direction_bar_chart(results: List[Dict[str, Any]]) -> bytes:
     label_metrics = compute_label_metrics(confusion_matrix)
     total = len(results)
     exact_matches = sum(m["true_positives"] for m in label_metrics.values())
-    return _render_direction_bar_chart(label_metrics, VALID_LABELS, total, exact_matches, "Vehicle Ground Truth vs Correct Detections")
+    return _render_direction_bar_chart(
+        label_metrics,
+        VALID_LABELS,
+        total,
+        exact_matches,
+        "Vehicle Ground Truth vs Correct Detections",
+    )
 
 
 def predict_direction(
@@ -322,7 +332,7 @@ def main() -> None:
         "left/right classification against a labeled image dataset, where "
         "each image's ground-truth direction is encoded as a "
         '"_<direction>_"-delimited token anywhere in its filename (e.g. '
-        'entity_1_right_car.jpg). Reports the exact match rate, a confusion '
+        "entity_1_right_car.jpg). Reports the exact match rate, a confusion "
         "matrix, and per-direction precision/recall/F1."
     )
     parser.add_argument(

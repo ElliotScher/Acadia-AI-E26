@@ -86,7 +86,9 @@ class VideoEntityRecord:
     hsv_hist: np.ndarray  # L2-normalized 3D HSV color histogram
     aspect_ratio: float  # Width / Height of the best crop
     direction: str  # "left" or "right" indicating travel direction
-    entity_type: Optional[int] = None  # Majority-vote COCO class id from the yolo report
+    entity_type: Optional[int] = (
+        None  # Majority-vote COCO class id from the yolo report
+    )
     relative_speed: float = 0.0  # Raw pixels/sec until normalized to [0, 1]
     absolute_speed: Optional[float] = None  # Calibrated real-world speed
 

@@ -43,6 +43,9 @@ venv
 # OCR test fixtures needed by the test suite (tracked via Git LFS)
 !tests/data/images/OCR/*.jpg
 
+# PyInstaller splash screen asset
+!assets/splash.png
+
 # Virtual Environments
 .env/
 .venv/
