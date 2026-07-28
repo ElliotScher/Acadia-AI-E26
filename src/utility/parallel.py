@@ -86,7 +86,7 @@ class _T(QtCore.QObject):
         if progress == 0:
             return f"Waiting on {len(self.threads)} tasks..."
         return f"Waiting on {len(self.threads)} tasks ({progress:.2%})..."
-    
+
     def spinProgress(self) -> int:
         if len(self.threads) == 0:
             return -1
@@ -98,6 +98,7 @@ class _T(QtCore.QObject):
         ) / len(self.threads)
         return round(progress * 100)
 
+
 class ThreadTracker(_T):
     _instance = None
 
@@ -106,7 +107,8 @@ class ThreadTracker(_T):
             cls._instance = _T()
         return cls._instance
 
-class ProgressTracker():
+
+class ProgressTracker:
     def __init__(self, total: int, thread: Async | None = None):
         self.done = 0
         self.thread = thread

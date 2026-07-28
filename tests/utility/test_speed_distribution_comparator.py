@@ -173,7 +173,9 @@ def test_tail_n_larger_than_row_count_keeps_everything():
 
 
 def test_tail_rejects_n_less_than_one():
-    comparator = SpeedDistributionComparator(speed_bins=[10, 20], counts=[[1, 2], [3, 4]])
+    comparator = SpeedDistributionComparator(
+        speed_bins=[10, 20], counts=[[1, 2], [3, 4]]
+    )
     with pytest.raises(ValueError, match="at least 1"):
         comparator.tail(0)
 
@@ -289,7 +291,9 @@ def test_load_directional_csv_raises_on_unparseable_row(tmp_path):
 
 
 def test_distribution_normalizes_counts_to_sum_to_one():
-    comparator = SpeedDistributionComparator(speed_bins=[10, 20, 30], counts=[[2, 6, 2]])
+    comparator = SpeedDistributionComparator(
+        speed_bins=[10, 20, 30], counts=[[2, 6, 2]]
+    )
     p = comparator.distribution(0)
     assert p == pytest.approx([0.2, 0.6, 0.2])
     assert p.sum() == pytest.approx(1.0)
@@ -306,7 +310,9 @@ def test_distributions_stacks_every_row():
 
 
 def test_variance_of_single_bin_distribution_is_zero():
-    comparator = SpeedDistributionComparator(speed_bins=[10, 20, 30], counts=[[0, 5, 0]])
+    comparator = SpeedDistributionComparator(
+        speed_bins=[10, 20, 30], counts=[[0, 5, 0]]
+    )
     assert comparator.variance(0) == pytest.approx(0.0, abs=1e-9)
 
 
@@ -317,12 +323,16 @@ def test_variance_matches_known_two_point_distribution():
 
 
 def test_variance_is_scale_invariant_to_sample_size():
-    comparator = SpeedDistributionComparator(speed_bins=[10, 20], counts=[[1, 1], [10, 10]])
+    comparator = SpeedDistributionComparator(
+        speed_bins=[10, 20], counts=[[1, 1], [10, 10]]
+    )
     assert comparator.variance(0) == pytest.approx(comparator.variance(1))
 
 
 def test_variance_rejects_all_zero_row():
-    comparator = SpeedDistributionComparator(speed_bins=[10, 20, 30], counts=[[0, 0, 0]])
+    comparator = SpeedDistributionComparator(
+        speed_bins=[10, 20, 30], counts=[[0, 0, 0]]
+    )
     with pytest.raises(ValueError, match="zero total count"):
         comparator.variance(0)
 
@@ -382,7 +392,10 @@ def test_plot_ridgeline_with_reference_counts_writes_a_nonempty_png(tmp_path):
     output_path = tmp_path / "ridgeline.png"
 
     plot_ridgeline(
-        comparator, output_path, reference_counts=[[3, 6, 4, 1]], reference_labels=["Report"]
+        comparator,
+        output_path,
+        reference_counts=[[3, 6, 4, 1]],
+        reference_labels=["Report"],
     )
 
     assert output_path.exists()
@@ -414,7 +427,9 @@ def test_plot_ridgeline_defaults_reference_labels_when_not_given(tmp_path):
     )
     output_path = tmp_path / "ridgeline.png"
 
-    plot_ridgeline(comparator, output_path, reference_counts=[[3, 6, 4, 1], [1, 2, 8, 5]])
+    plot_ridgeline(
+        comparator, output_path, reference_counts=[[3, 6, 4, 1], [1, 2, 8, 5]]
+    )
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
@@ -797,7 +812,9 @@ def test_plot_ridgeline_sets_axis_labels(tmp_path, monkeypatch):
     assert captured["ax"].get_ylabel() == "Date"
 
 
-def test_plot_ridgeline_highlight_last_n_adds_title_note_and_legend_entry(tmp_path, monkeypatch):
+def test_plot_ridgeline_highlight_last_n_adds_title_note_and_legend_entry(
+    tmp_path, monkeypatch
+):
     comparator = SpeedDistributionComparator(
         speed_bins=[10, 20, 30],
         counts=[[5, 10, 5], [6, 11, 5], [4, 9, 6], [3, 8, 7], [2, 7, 8]],
@@ -913,7 +930,9 @@ def test_plot_ridgeline_highlight_survives_max_rows_subsampling(tmp_path, monkey
 
     # The last row is always kept by the even subsampling, so a highlight
     # box is still drawn even though most of the last-n rows get thinned out.
-    plot_ridgeline(comparator, tmp_path / "ridgeline.png", max_rows=10, highlight_last_n=3)
+    plot_ridgeline(
+        comparator, tmp_path / "ridgeline.png", max_rows=10, highlight_last_n=3
+    )
 
     box_calls = [c for c in calls if c[1].get("edgecolor") == "black"]
     assert len(box_calls) == 1

@@ -127,14 +127,16 @@ def test_run_vehicle_direction_benchmark_auto_fetches_weights_when_no_model_give
 ):
     _touch(tmp_path / "entity_1_left_car.jpg")
 
-    with patch(
-        "src.utility.vehicle_direction_benchmark.fetch_vehicle_pose_weights",
-        return_value=tmp_path / "fetched.pt",
-    ) as mock_fetch, patch(
-        "src.utility.vehicle_direction_benchmark.load_model"
-    ) as mock_load_model, patch(
-        "src.utility.vehicle_direction_benchmark.predict_direction",
-        return_value="left",
+    with (
+        patch(
+            "src.utility.vehicle_direction_benchmark.fetch_vehicle_pose_weights",
+            return_value=tmp_path / "fetched.pt",
+        ) as mock_fetch,
+        patch("src.utility.vehicle_direction_benchmark.load_model") as mock_load_model,
+        patch(
+            "src.utility.vehicle_direction_benchmark.predict_direction",
+            return_value="left",
+        ),
     ):
         report = run_vehicle_direction_benchmark(tmp_path)
 

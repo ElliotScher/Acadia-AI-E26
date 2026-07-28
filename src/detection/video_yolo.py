@@ -3,6 +3,7 @@ YOLO Video Object Detection Utility
 
 Processes videos in an input directory using YOLO, maps target categories (e.g., bus/truck to car).
 """
+
 import os
 
 import argparse
@@ -210,7 +211,9 @@ def _frame_worker(
 
                             conf = float(box.conf[0])
                             rect = Rectangle(x=x1, y=y1, w=w, h=h)
-                            boxes_found.append((frame_idx, rect, -1, conf, "license_plate"))
+                            boxes_found.append(
+                                (frame_idx, rect, -1, conf, "license_plate")
+                            )
 
                 if boxes_found:
                     with results_lock:
@@ -245,7 +248,7 @@ def process_videos(
     run_base_model: bool = True,
     vehicle_merge: bool = True,
     downsample_factor: int = 1,
-    write_frames: bool = False
+    write_frames: bool = False,
 ) -> List[DetectionResult]:
     """
     Processes a list of video paths using YOLO and extracts detection boxes.
@@ -571,7 +574,7 @@ def main() -> None:
         "--merge",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Whether to merge vehicles such as trucks, busses, and cars into the same ID"
+        help="Whether to merge vehicles such as trucks, busses, and cars into the same ID",
     )
     parser.add_argument(
         "-r",
@@ -674,8 +677,10 @@ def main() -> None:
             model = load_model(args.model)
             for cls in target_classes:
                 if cls in model.names:
-                    if args.merge: merged_cls = merge_vehicle_class_id(cls)
-                    else: merged_cls = cls
+                    if args.merge:
+                        merged_cls = merge_vehicle_class_id(cls)
+                    else:
+                        merged_cls = cls
                     label = CLASS_ID_MAPPING.get(merged_cls, model.names[cls])
                     total_counts[label] = 0
                 else:
@@ -728,7 +733,7 @@ def main() -> None:
         run_base_model=run_base_model,
         vehicle_merge=args.merge,
         downsample_factor=args.downsample,
-        write_frames=args.write_frames
+        write_frames=args.write_frames,
     )
 
     progress_bar.close()

@@ -117,11 +117,15 @@ def calibrate_report(
 
     target_entities = entities
     if entity_type is not None:
-        target_entities = [e for e in target_entities if e.get("entity_type") == entity_type]
+        target_entities = [
+            e for e in target_entities if e.get("entity_type") == entity_type
+        ]
     if direction is not None:
         direction_lower = direction.lower()
         target_entities = [
-            e for e in target_entities if str(e.get("direction")).lower() == direction_lower
+            e
+            for e in target_entities
+            if str(e.get("direction")).lower() == direction_lower
         ]
 
     candidates = [e for e in target_entities if e["entity_id"] == reference_entity_id]
@@ -207,7 +211,9 @@ def plot_speed_histogram(
         entities = [e for e in entities if e.get("entity_type") == entity_type]
     if direction is not None:
         direction_lower = direction.lower()
-        entities = [e for e in entities if str(e.get("direction")).lower() == direction_lower]
+        entities = [
+            e for e in entities if str(e.get("direction")).lower() == direction_lower
+        ]
 
     speeds: List[float] = [
         e["absolute_speed"] for e in entities if e.get("absolute_speed") is not None
@@ -250,7 +256,9 @@ def plot_speed_histogram(
     plt.close(fig)
 
 
-def _histogram_path(args: argparse.Namespace, output_path: Path, direction: str) -> Path:
+def _histogram_path(
+    args: argparse.Namespace, output_path: Path, direction: str
+) -> Path:
     """
     Resolves the output path for one direction's speed histogram, inserting
     the direction before the file extension so multiple directions never
@@ -382,7 +390,10 @@ def main() -> None:
     if args.left_reference_entity_id is not None and args.left_reference_speed is None:
         logger.error("--left-reference-entity-id requires --left-reference-speed.")
         sys.exit(1)
-    if args.right_reference_entity_id is not None and args.right_reference_speed is None:
+    if (
+        args.right_reference_entity_id is not None
+        and args.right_reference_speed is None
+    ):
         logger.error("--right-reference-entity-id requires --right-reference-speed.")
         sys.exit(1)
 
@@ -450,9 +461,14 @@ def main() -> None:
             histogram_path = _histogram_path(args, output_path, direction)
             try:
                 plot_speed_histogram(
-                    report, histogram_path, entity_type=args.entity_type, direction=direction
+                    report,
+                    histogram_path,
+                    entity_type=args.entity_type,
+                    direction=direction,
                 )
-                logger.info("Saved '%s' speed histogram to %s.", direction, histogram_path)
+                logger.info(
+                    "Saved '%s' speed histogram to %s.", direction, histogram_path
+                )
             except ValueError as e:
                 logger.error(
                     "Could not generate '%s' speed histogram: %s", direction, e

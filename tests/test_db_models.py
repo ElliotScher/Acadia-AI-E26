@@ -215,7 +215,7 @@ def test_instance(test_session: Session):
     assert instance1.overlap_with(instance1) == 1
     assert instance1.overlap_with(instance2) == 0.5
     assert round(instance2.overlap_with(instance3), 3) == 0.333
-    
+
     assert instance1.overlap_with(instance3) == 0
     present_types = Instance.get_present_types(test_session)
     assert len(present_types) == 2

@@ -71,8 +71,22 @@ from utility.geometryutils import Rectangle
 
 # Empirically reverse-engineered from the model's undocumented 14-keypoint
 # CarFusion-style schema (see module docstring) - not sourced from any spec.
-FRONT_KEYPOINTS: Tuple[int, ...] = (0, 1, 4, 5, 9, 10)  # near-side front wheel, headlight/fender, front roof
-REAR_KEYPOINTS: Tuple[int, ...] = (2, 3, 6, 7, 11, 12)  # near-side rear wheel, taillight/bumper, rear roof
+FRONT_KEYPOINTS: Tuple[int, ...] = (
+    0,
+    1,
+    4,
+    5,
+    9,
+    10,
+)  # near-side front wheel, headlight/fender, front roof
+REAR_KEYPOINTS: Tuple[int, ...] = (
+    2,
+    3,
+    6,
+    7,
+    11,
+    12,
+)  # near-side rear wheel, taillight/bumper, rear roof
 # Indices 8 and 13 are deliberately absent from both clusters above - see
 # module docstring.
 
@@ -439,7 +453,9 @@ def main() -> None:
     if args.model:
         model_path = Path(args.model)
     else:
-        print(f"No --model given, fetching default weights to {DEFAULT_WEIGHTS_PATH}...")
+        print(
+            f"No --model given, fetching default weights to {DEFAULT_WEIGHTS_PATH}..."
+        )
         model_path = fetch_vehicle_pose_weights()
 
     # Configure PyTorch CPU thread count to respect our core allocation globally

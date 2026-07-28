@@ -103,7 +103,7 @@ def process_images(
 
             boxes_found: List[Tuple[Rectangle, int, float]] = []
             for r in results:
-                for box in r.boxes: # type:ignore
+                for box in r.boxes:  # type: ignore
                     cls = int(box.cls[0])
 
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -122,9 +122,7 @@ def process_images(
                     rect = Rectangle(x=x1, y=y1, w=w, h=h)
                     boxes_found.append((rect, cls, conf))
 
-            results_list.append(
-                DetectionResult(image_path=img_path, boxes=boxes_found)
-            )
+            results_list.append(DetectionResult(image_path=img_path, boxes=boxes_found))
 
         except Exception as e:
             logger.error("Error processing image %s: %s", img_path, e)
@@ -159,7 +157,9 @@ def save_annotated_images(
         if image is not None:
             if not boxes:
                 cv2.imwrite(str(out_path_base), image)
-                logger.debug("Saved original image with no detections: %s", out_path_base)
+                logger.debug(
+                    "Saved original image with no detections: %s", out_path_base
+                )
             else:
                 for i, (rect, label, conf) in enumerate(boxes):
                     image_copy = image.copy()

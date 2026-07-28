@@ -98,7 +98,7 @@ class ExportDialog(QtWidgets.QDialog):
                     self.filtered,
                     self.exportModeIntervalTime.value(),
                     self.openExport.isChecked(),
-                    self.separateDirections.isChecked()
+                    self.separateDirections.isChecked(),
                 )
             )
 

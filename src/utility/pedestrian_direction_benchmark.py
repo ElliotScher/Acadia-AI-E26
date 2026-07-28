@@ -26,7 +26,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from detection.image_yolo import load_model
 from ultralytics import YOLO
 
-from src.detection.direction.pedestrian_direction import Direction, detect_pose, parse_poses
+from src.detection.direction.pedestrian_direction import (
+    Direction,
+    detect_pose,
+    parse_poses,
+)
 from src.utility.direction_benchmark_common import (
     IMAGE_SUFFIXES,
     NO_DETECTION,
@@ -34,8 +38,12 @@ from src.utility.direction_benchmark_common import (
     build_confusion_matrix,
     compute_label_metrics,
 )
-from src.utility.direction_benchmark_common import compute_label_counts as _compute_label_counts
-from src.utility.direction_benchmark_common import find_labeled_images as _find_labeled_images
+from src.utility.direction_benchmark_common import (
+    compute_label_counts as _compute_label_counts,
+)
+from src.utility.direction_benchmark_common import (
+    find_labeled_images as _find_labeled_images,
+)
 from src.utility.direction_benchmark_common import label_from_filename
 from src.utility.direction_benchmark_common import (
     print_direction_benchmark_summary,
@@ -100,7 +108,13 @@ def render_direction_bar_chart(results: List[Dict[str, Any]]) -> bytes:
     label_metrics = compute_label_metrics(confusion_matrix)
     total = len(results)
     exact_matches = sum(m["true_positives"] for m in label_metrics.values())
-    return _render_direction_bar_chart(label_metrics, VALID_LABELS, total, exact_matches, "Pedestrian Ground Truth vs Correct Detections")
+    return _render_direction_bar_chart(
+        label_metrics,
+        VALID_LABELS,
+        total,
+        exact_matches,
+        "Pedestrian Ground Truth vs Correct Detections",
+    )
 
 
 def predict_direction(
@@ -298,7 +312,7 @@ def main() -> None:
         "each image's ground-truth direction is encoded as a "
         '"_<direction>_"-delimited token anywhere in its filename - prefix, '
         "middle, or suffix (e.g. car_017_left.jpg, left_car_017.jpg, and "
-        "cam2_left_017.jpg are all recognized as \"left\"). Reports the "
+        'cam2_left_017.jpg are all recognized as "left"). Reports the '
         "exact match rate, a confusion matrix, and per-direction "
         "precision/recall/F1."
     )

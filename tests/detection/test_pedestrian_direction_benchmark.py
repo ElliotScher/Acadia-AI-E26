@@ -209,7 +209,9 @@ def test_run_pedestrian_direction_benchmark_writes_bar_chart_png(tmp_path):
         "src.utility.pedestrian_direction_benchmark.predict_direction",
         return_value="left",
     ):
-        run_pedestrian_direction_benchmark(tmp_path, model=object(), bar_chart=bar_chart_path)
+        run_pedestrian_direction_benchmark(
+            tmp_path, model=object(), bar_chart=bar_chart_path
+        )
 
     assert bar_chart_path.exists()
     assert bar_chart_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")

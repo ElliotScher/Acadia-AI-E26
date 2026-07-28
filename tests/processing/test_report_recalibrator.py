@@ -3,7 +3,9 @@ import pytest
 from src.processing.report_recalibrator import calibrate_report
 
 
-def _entity(entity_id, relative_speed, video="clip.mp4", entity_type=2, direction="right"):
+def _entity(
+    entity_id, relative_speed, video="clip.mp4", entity_type=2, direction="right"
+):
     return {
         "video": video,
         "entity_id": entity_id,
@@ -19,9 +21,7 @@ def _report(entities):
 
 
 def test_calibrate_report_scales_linearly():
-    report = _report(
-        [_entity(1, 0.25), _entity(2, 1.0), _entity(3, 0.5)]
-    )
+    report = _report([_entity(1, 0.25), _entity(2, 1.0), _entity(3, 0.5)])
 
     calibrate_report(report, reference_entity_id=2, reference_speed=60.0)
 
@@ -47,7 +47,10 @@ def test_calibrate_report_video_mismatch_names_the_actual_video():
     report = _report([_entity(1, 0.5, video="cam1.mp4")])
     with pytest.raises(ValueError, match="cam1.mp4"):
         calibrate_report(
-            report, reference_entity_id=1, reference_speed=60.0, reference_video="wrong_name.mp4"
+            report,
+            reference_entity_id=1,
+            reference_speed=60.0,
+            reference_video="wrong_name.mp4",
         )
 
 
@@ -86,7 +89,9 @@ def test_calibrate_report_direction_scopes_reference_lookup_and_rescale():
             _entity(3, 0.25, direction="right"),
         ]
     )
-    calibrate_report(report, reference_entity_id=2, reference_speed=60.0, direction="left")
+    calibrate_report(
+        report, reference_entity_id=2, reference_speed=60.0, direction="left"
+    )
 
     entities = {e["entity_id"]: e for e in report["individual_entities"]}
     assert entities[1]["absolute_speed"] == pytest.approx(30.0)
@@ -96,7 +101,9 @@ def test_calibrate_report_direction_scopes_reference_lookup_and_rescale():
 
 def test_calibrate_report_direction_is_case_insensitive():
     report = _report([_entity(1, 1.0, direction="Left")])
-    calibrate_report(report, reference_entity_id=1, reference_speed=60.0, direction="left")
+    calibrate_report(
+        report, reference_entity_id=1, reference_speed=60.0, direction="left"
+    )
     assert report["individual_entities"][0]["absolute_speed"] == pytest.approx(60.0)
 
 
@@ -110,8 +117,12 @@ def test_calibrate_report_left_and_right_use_independent_scale_factors():
         ]
     )
 
-    calibrate_report(report, reference_entity_id=2, reference_speed=60.0, direction="left")
-    calibrate_report(report, reference_entity_id=4, reference_speed=20.0, direction="right")
+    calibrate_report(
+        report, reference_entity_id=2, reference_speed=60.0, direction="left"
+    )
+    calibrate_report(
+        report, reference_entity_id=4, reference_speed=20.0, direction="right"
+    )
 
     entities = {e["entity_id"]: e for e in report["individual_entities"]}
     assert entities[1]["absolute_speed"] == pytest.approx(30.0)
@@ -128,8 +139,12 @@ def test_calibrate_report_direction_metadata_does_not_clobber_across_calls():
         ]
     )
 
-    calibrate_report(report, reference_entity_id=1, reference_speed=60.0, direction="left")
-    calibrate_report(report, reference_entity_id=2, reference_speed=20.0, direction="right")
+    calibrate_report(
+        report, reference_entity_id=1, reference_speed=60.0, direction="left"
+    )
+    calibrate_report(
+        report, reference_entity_id=2, reference_speed=20.0, direction="right"
+    )
 
     metadata = report["metadata"]
     assert metadata["left_reference_entity_id"] == 1
@@ -141,4 +156,6 @@ def test_calibrate_report_direction_metadata_does_not_clobber_across_calls():
 def test_calibrate_report_direction_missing_entity_raises():
     report = _report([_entity(1, 0.5, direction="right")])
     with pytest.raises(ValueError):
-        calibrate_report(report, reference_entity_id=1, reference_speed=60.0, direction="left")
+        calibrate_report(
+            report, reference_entity_id=1, reference_speed=60.0, direction="left"
+        )

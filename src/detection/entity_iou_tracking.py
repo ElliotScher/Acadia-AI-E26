@@ -76,12 +76,10 @@ def entity_iou_tracking(
     for entity, track in tracks.items():
         if len(track.instances) > 1:
             entity.rawSpeed = (
-                abs(
-                    track.instances[0].center()[0] - track.instances[-1].center()[0]
-                )
+                abs(track.instances[0].center()[0] - track.instances[-1].center()[0])
                 / (track.lastSeen - track.start).total_seconds()
             )
-            
+
             for instance in track.instances:
                 instance.direction_lr = (
                     1

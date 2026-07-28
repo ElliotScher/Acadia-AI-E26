@@ -25,11 +25,8 @@ def merge_vehicle_class_id(class_id: int) -> int:
     Returns:
         int: The merged class id.
     """
-    return (
-        MERGED_VEHICLE_CLASS_ID
-        if class_id in _VEHICLE_MERGE_CLASS_IDS
-        else class_id
-    )
+    return MERGED_VEHICLE_CLASS_ID if class_id in _VEHICLE_MERGE_CLASS_IDS else class_id
+
 
 CLASS_ID_MAPPING: Dict[int, str] = {
     0: "person",

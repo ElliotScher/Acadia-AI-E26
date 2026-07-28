@@ -316,7 +316,7 @@ def detect_entities(img: np.ndarray) -> List[Rectangle]:
     # Use RETR_EXTERNAL to find only the outer boundaries of contours
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    raw_boxes : List[Rectangle] = []
+    raw_boxes: List[Rectangle] = []
     h_img, w_img = img.shape[:2]
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)

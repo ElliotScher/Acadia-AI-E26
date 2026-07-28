@@ -18,14 +18,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import matplotlib
-
 from utility import imgutils
 from utility.geometryutils import Rectangle
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 
 import cv2
 import numpy as np
@@ -780,6 +774,18 @@ def save_occupancy_graph(
     if not timeline:
         logger.warning("Occupancy timeline is empty; skipping graph generation.")
         return
+
+    # Imported lazily - matplotlib is only needed by this rendering path, and
+    # pulling it in at module scope would slow down every import of this
+    # module (and every caller's startup) even when no chart is ever drawn.
+    import matplotlib
+
+    # Headless/non-interactive backend - this script generates chart images to
+    # a file, it never shows a window, and the default backend would
+    # otherwise try (and fail) to open a display in a server/CI environment.
+    # Must be set before pyplot is imported.
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     timestamps = [datetime.datetime.fromtimestamp(e["timestamp"]) for e in timeline]
     occupancy = [e["occupancy"] for e in timeline]

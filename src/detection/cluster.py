@@ -20,6 +20,7 @@ from utility.parallel import ProgressTracker
 # Initialize Logger
 logger = logging.getLogger("cluster")
 
+
 @dataclass
 class Cluster:
     """
@@ -33,7 +34,9 @@ class Cluster:
     counts: dict[int, int]  # number of instances of each COCO class
     detections: DetectionResult  # DetectionResults in the cluster
 
+
 Detection = tuple[Rectangle, int, float]
+
 
 # Checks whether two boxes are within distance pixels of each other.
 def _boxes_close(a: Detection, b: Detection, distance: int):
@@ -107,10 +110,13 @@ def process_clusters(
             classCounts[cls_id] = classCounts.get(cls_id, 0) + 1
 
         clusters.append(
-            Cluster((x1, y1, x2, y2), classCounts, DetectionResult(
-                detectionResults.image_path,
-                list(detections[i] for i in idxs)
-            ))
+            Cluster(
+                (x1, y1, x2, y2),
+                classCounts,
+                DetectionResult(
+                    detectionResults.image_path, list(detections[i] for i in idxs)
+                ),
+            )
         )
     return clusters
 
@@ -159,6 +165,7 @@ def save_annotated_results(
             )
             cv2.imwrite(str(out_path), image_copy)
 
+
 def process_images(
     img_paths: list[Path],
     model_name: str,
@@ -184,9 +191,7 @@ def process_images(
     Returns:
         list[DetectionResult]: List of detection results per image.
     """
-    classes_list = (
-        target_classes if target_classes is not None else TARGET_CLASSES
-    )
+    classes_list = target_classes if target_classes is not None else TARGET_CLASSES
     results_list: list[Cluster] = []
 
     try:
@@ -219,7 +224,7 @@ def process_images(
 
             boxes_found: list[tuple[Rectangle, int, float]] = []
             for r in results:
-                for box in r.boxes: # type:ignore
+                for box in r.boxes:  # type: ignore
                     cls = int(box.cls[0])
 
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -242,7 +247,7 @@ def process_images(
                 process_clusters(
                     DetectionResult(image_path=img_path, boxes=boxes_found),
                     max_distance,
-                    max_size_ratio
+                    max_size_ratio,
                 )
             )
 
@@ -335,7 +340,7 @@ def thread_worker(
         conf_threshold=conf_threshold,
         target_classes=target_classes,
         max_distance=max_distance,
-        max_size_ratio=max_size_ratio
+        max_size_ratio=max_size_ratio,
     )
     with lock:
         results_list.extend(thread_results)
@@ -480,7 +485,6 @@ def main() -> None:
         logger.warning("No matching images found in the input directory.")
         return
 
-
     progress_bar = tqdm(total=len(all_images), desc="Progress", unit="image")
 
     chunk_size = max(1, len(all_images) // thread_count)
@@ -508,7 +512,7 @@ def main() -> None:
                 "conf_threshold": args.conf,
                 "target_classes": target_classes,
                 "max_distance": args.max_distance,
-                "max_size_ratio": args.max_ratio
+                "max_size_ratio": args.max_ratio,
             },
         )
         threads.append(thread)
