@@ -30,29 +30,23 @@ class ExportDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout()
 
-        self.exportModeImages = QtWidgets.QRadioButton("Row per Image")
+        self.exportModeImages = QtWidgets.QRadioButton("Row per Image", self)
         self.exportModeImages.setChecked(True)
         self.exportModeImages.toggled.connect(self.enableSeparateDirections)
         layout.addWidget(self.exportModeImages)
-        self.exportModeEntities = QtWidgets.QRadioButton("Row per Entity")
+        self.exportModeEntities = QtWidgets.QRadioButton("Row per Entity", self)
         layout.addWidget(self.exportModeEntities)
-        self.exportModeClusters = QtWidgets.QRadioButton("Row per Cluster")
+        self.exportModeClusters = QtWidgets.QRadioButton("Row per Cluster", self)
         layout.addWidget(self.exportModeClusters)
-        self.exportModeInterval = QtWidgets.QRadioButton("Row per Time Interval")
+        self.exportModeInterval = QtWidgets.QRadioButton("Row per Time Interval", self)
         self.exportModeInterval.toggled.connect(self.enableIntervalTime)
         layout.addWidget(self.exportModeInterval)
 
-        intervalTimeLayout = QtWidgets.QHBoxLayout()
-        self.exportModeIntervalTime = QtWidgets.QSpinBox()
-        self.exportModeIntervalTime.setRange(1, 60)
-        self.exportModeIntervalTime.setValue(15)
-        self.exportModeIntervalTime.setMaximumWidth(50)
+        self.exportModeIntervalTime = QtWidgets.QSpinBox(
+            self, suffix=" minutes", minimum=1, maximum=60, value=15
+        )
         self.exportModeIntervalTime.setEnabled(False)
-        intervalTimeLayout.addWidget(self.exportModeIntervalTime)
-        intervalTimeLayout.addWidget(QtWidgets.QLabel("minutes"))
-        layout.addLayout(intervalTimeLayout)
-
-        layout.addSpacing(10)
+        layout.addWidget(self.exportModeIntervalTime)
 
         self.separateDirections = QtWidgets.QCheckBox("Separate By Direction")
         layout.addWidget(self.separateDirections)

@@ -35,7 +35,7 @@ class Filters(QtWidgets.QWidget):
     @QtCore.Slot()
     def makeFilter(self, *args):
         selects = []
-        child: Filter
+        child: FilterRow
         for child in self.children():  # type: ignore
             if hasattr(child, "makeFilter") and not child.deleted:
                 selects.append(child.makeFilter(select(*args)))
@@ -44,6 +44,13 @@ class Filters(QtWidgets.QWidget):
         elif len(selects) == 1:
             return selects[0]
         return union(*list(map(lambda s: select(s.subquery()), selects)))
+
+    @QtCore.Slot()
+    def updatePresentTypes(self, types: list[int]):
+        child: FilterRow
+        for child in self.children():  # type: ignore
+            if hasattr(child, "updatePresentTypes"):
+                child.updatePresentTypes(types)
 
 
 class FilterRow(QtWidgets.QGroupBox):
@@ -135,6 +142,13 @@ class FilterRow(QtWidgets.QGroupBox):
             return selects[0]
         return intersect(*selects)
 
+    @QtCore.Slot()
+    def updatePresentTypes(self, types: list[int]):
+        child: Filter
+        for child in self.filterList.children():  # type: ignore
+            if hasattr(child, "updatePresentTypes"):
+                child.updatePresentTypes(types)
+
 
 class Filter(QtWidgets.QGroupBox):
     name: str
@@ -168,6 +182,10 @@ class Filter(QtWidgets.QGroupBox):
 
     @abstractmethod
     def makeFilter(self, query: Select):
+        pass
+
+    @abstractmethod
+    def updatePresentTypes(self, types: list[int]):
         pass
 
 

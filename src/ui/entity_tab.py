@@ -27,6 +27,9 @@ class EntitiesTab(QtWidgets.QWidget):
         super().__init__()
         layout = QtWidgets.QHBoxLayout(self)
 
+        splitter = QtWidgets.QSplitter()
+        splitter.setStyleSheet("QSplitter::handle { width: 2px; }")
+
         gallerySide = QtWidgets.QWidget()
         gallerySideLayout = QtWidgets.QVBoxLayout(gallerySide)
 
@@ -48,10 +51,12 @@ class EntitiesTab(QtWidgets.QWidget):
         self.gallery = EntityGallery()
         gallerySideLayout.addWidget(self.gallery)
 
-        layout.addWidget(gallerySide)
+        splitter.addWidget(gallerySide)
         self.entityInfo = EntityInfo()
         self.entityInfo.imageOpened.connect(self.imageOpened.emit)
-        layout.addWidget(self.entityInfo)
+        splitter.addWidget(self.entityInfo)
+
+        layout.addWidget(splitter)
 
     @QtCore.Slot()
     def newselection(self):
@@ -85,6 +90,7 @@ class EntitiesTab(QtWidgets.QWidget):
             map(lambda d: d[0], self.session.execute(query).unique().all())
         )
         self.count.setText(str(len(self.galleryModel.results)) + " entities")
+        self.filters.updatePresentTypes(Instance.get_present_types(self.session))
 
     def getEntities(self, filtered: bool) -> list[Entity]:
         if not hasattr(self, "session"):
@@ -126,6 +132,9 @@ class EntityGallery(QtWidgets.QListView):
         self.setDragEnabled(False)
         self.setLayoutMode(self.LayoutMode.Batched)
         self.setBatchSize(100)
+        self.setStyleSheet(
+            "QListView::item:selected { border-width: 2px; border-color: palette(accent); border-style: solid; }"
+        )
 
     @QtCore.Slot()
     def invertSelection(self):
@@ -212,12 +221,10 @@ class EntityInfo(QtWidgets.QGroupBox):
 
         self.setTitle("Entity Info")
         self.setMinimumSize(400, 500)
-        self.setMaximumWidth(400)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(self.alignment().AlignTop)
 
         self.viewer = EntityViewer()
-        self.viewer.resize(300, 150)
         self.viewer.hide()
         layout.addWidget(self.viewer)
 
@@ -389,6 +396,9 @@ class EntityViewer(QtWidgets.QGraphicsView):
             instance.height,
             pen,
         )
+        self.boundingRect = QtCore.QRectF(
+            instance.x, instance.y, instance.width, instance.height
+        )
         self.fitInView(
             instance.x,
             instance.y,
@@ -403,3 +413,12 @@ class EntityViewer(QtWidgets.QGraphicsView):
             self.scale(factor, factor)
         else:
             super().wheelEvent(event)
+
+    def doZoom(self, factor: int):
+        if factor == 0:
+            if hasattr(self, "boundingRect"):
+                self.fitInView(
+                    self.boundingRect, QtCore.Qt.AspectRatioMode.KeepAspectRatio
+                )
+        else:
+            self.scale(1 + factor / 10.0, 1 + factor / 10.0)

@@ -3,7 +3,6 @@
 *.log
 *.pyc
 *.swp
-.DS_Store
 .atom/
 .build/
 .buildlog/
@@ -66,9 +65,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-
-# YOLO Models
-*.pt
 
 # Database
 *.db

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,7 @@ from src.processing.video_entityprofiler import (
     VideoEntityRecord,
     calibrate_absolute_speeds,
     compute_relative_speeds,
+    load_yolo_detections,
     process_video,
 )
 from utility import imgutils
@@ -179,20 +181,34 @@ def test_calibrate_absolute_speeds_ambiguous_entity_id_requires_video():
     assert records[1].absolute_speed == pytest.approx(30.0)
 
 
+def test_calibrate_absolute_speeds_video_mismatch_names_the_actual_video():
+    # entity_id 1 exists, but not in the video the caller named - the error
+    # should say so distinctly from "entity_id not found at all", and name
+    # the video(s) it actually appears in so a wrong --reference-video is
+    # obvious rather than reading as a missing/wrong entity_id.
+    records = [_make_record(1, 0.5, video_path="cam1.mp4")]
+
+    with pytest.raises(ValueError, match="cam1.mp4"):
+        calibrate_absolute_speeds(
+            records,
+            reference_entity_id=1,
+            reference_speed=60.0,
+            reference_video_path="wrong_name.mp4",
+        )
+
+
 def test_process_video_computes_direction_and_relative_speed():
-    # A green box moving 5px/frame to the right across 5 frames. Box dims must
-    # exceed detect_entities's strict "> 20" filter on both width and height.
+    # A box moving 5px/frame to the right across 5 frames, sourced from a
+    # video_yolo.py-style frame_detections map instead of live detection.
     frame_w, frame_h = 200, 80
     box_w, box_h = 30, 25
     box_y = 20
     fps = 10.0
 
-    frames = []
-    for i in range(5):
-        frame = np.zeros((frame_h, frame_w, 3), dtype=np.uint8)
-        x = i * 5
-        frame[box_y : box_y + box_h, x : x + box_w] = (0, 200, 0)  # BGR green
-        frames.append(frame)
+    frames = [np.zeros((frame_h, frame_w, 3), dtype=np.uint8) for _ in range(5)]
+    frame_detections = {
+        i: [(Rectangle(x=i * 5, y=box_y, w=box_w, h=box_h), 2)] for i in range(5)
+    }  # COCO class id 2 = car
 
     import cv2
 
@@ -212,10 +228,63 @@ def test_process_video_computes_direction_and_relative_speed():
     with patch(
         "src.processing.video_entityprofiler.cv2.VideoCapture", return_value=mock_cap
     ):
-        records = process_video(video_path=Path("nonexistent_video.mp4"))
+        records = process_video(
+            video_path=Path("nonexistent_video.mp4"),
+            frame_detections=frame_detections,
+        )
 
     assert len(records) == 1
     record = records[0]
     assert record.direction == "right"
+    assert record.entity_type == 2
     # displacement = 20px (from center x=15 to center x=35) over 4 frames @ 10fps = 0.4s
     assert record.relative_speed == pytest.approx(50.0, rel=0.05)
+
+
+def test_load_yolo_detections_groups_by_video_and_frame(tmp_path):
+    report_path = tmp_path / "yolo_report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "detections": {
+                    "clip.mp4": [
+                        {
+                            "frame_index": 0,
+                            "box": [10, 20, 40, 60],
+                            "class_id": 2,
+                            "label": "car",
+                            "confidence": 0.9,
+                        },
+                        {
+                            "frame_index": 0,
+                            "box": [50, 20, 80, 60],
+                            "class_id": 1,
+                            "label": "bicycle",
+                            "confidence": 0.5,
+                        },
+                        {
+                            "frame_index": 3,
+                            "box": [12, 22, 42, 62],
+                            "class_id": 2,
+                            "label": "car",
+                            "confidence": 0.8,
+                        },
+                    ]
+                }
+            }
+        )
+    )
+
+    detections_by_video = load_yolo_detections(report_path)
+
+    assert set(detections_by_video.keys()) == {"clip.mp4"}
+    frame_map = detections_by_video["clip.mp4"]
+    assert set(frame_map.keys()) == {0, 3}
+    assert len(frame_map[0]) == 2
+    rect0, class_id0 = frame_map[0][0]
+    assert (rect0.x, rect0.y, rect0.w, rect0.h) == (10, 20, 30, 40)
+    assert class_id0 == 2
+    assert frame_map[0][1][1] == 1
+    rect3, class_id3 = frame_map[3][0]
+    assert (rect3.x, rect3.y, rect3.w, rect3.h) == (12, 22, 30, 40)
+    assert class_id3 == 2
