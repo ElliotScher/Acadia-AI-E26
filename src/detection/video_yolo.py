@@ -616,6 +616,12 @@ def main() -> None:
         help="Process every Nth frame to optimize speed (default: 2).",
     )
     parser.add_argument(
+        "--variable-downsample",
+        type=int,
+        default=0,
+        help="Skip the next N frames after an empty frame to optimize speed (default: 0).",
+    )
+    parser.add_argument(
         "--write-frames",
         action="store_true",
         help="Whether to write processed frames to the disk (default: False).",
@@ -754,6 +760,7 @@ def main() -> None:
         run_base_model=run_base_model,
         vehicle_merge=args.merge,
         downsample_factor=args.downsample,
+        variable_downsample_factor=args.variable_downsample,
         write_frames=args.write_frames,
     )
 
