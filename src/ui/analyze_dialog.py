@@ -115,7 +115,9 @@ class AnalyzeDialog(QtWidgets.QDialog):
             layout.addLayout(downsampleLayout)
 
             variableDownsampleLayout = QtWidgets.QHBoxLayout()
-            variableDownsampleLayout.addWidget(QtWidgets.QLabel("Variable downsample factor"))
+            variableDownsampleLayout.addWidget(
+                QtWidgets.QLabel("Variable downsample factor")
+            )
             self.variableDownsampleFactor = QtWidgets.QSpinBox()
             self.variableDownsampleFactor.setRange(0, 10)
             self.variableDownsampleFactor.setValue(1)

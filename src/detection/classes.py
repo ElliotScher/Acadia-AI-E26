@@ -3,7 +3,7 @@ from typing import Dict, List
 TARGET_CLASSES: List[int] = [0, 1, 2, 3, 5, 7]
 
 # Buses (5) and trucks (7) are tracked as cars (2) representing ordinary
-# vehicle traffic rather than modeled as their own category, and 
+# vehicle traffic rather than modeled as their own category, and
 # motorcycles (3) are tracked as bicycles (1) so every detector/report in the
 # pipeline folds them consistently - shared here so video_yolo.py's report
 # and any downstream consumer agree on the same convention. Merging is keyed
@@ -11,11 +11,7 @@ TARGET_CLASSES: List[int] = [0, 1, 2, 3, 5, 7]
 # canonical value a YOLO model actually predicts, while a name (whether from
 # CLASS_ID_MAPPING or a model's own .names) is just a display lookup on top
 # of it and shouldn't be re-parsed to decide classification.
-MERGING_MAP: dict[int, int] = {
-    5: 2,
-    7: 2,
-    3: 1
-}
+MERGING_MAP: dict[int, int] = {5: 2, 7: 2, 3: 1}
 
 
 def merge_vehicle_class_id(class_id: int) -> int:
@@ -31,6 +27,7 @@ def merge_vehicle_class_id(class_id: int) -> int:
         int: The merged class id.
     """
     return MERGING_MAP.get(class_id, class_id)
+
 
 CLASS_ID_MAPPING: Dict[int, str] = {
     0: "person",
