@@ -1,7 +1,144 @@
-# Acadia-AI-E26
+# Acadia AI (E26)
+
+**Acadia AI** is a desktop app built by a WPI Interactive Qualifying
+Project to help the National Park Service understand visitor use in Acadia
+National Park, using still images and video already captured by trail
+cameras deployed in the park. Rather than manually reviewing thousands of
+photos and hours of footage, it gives you a toolkit of independent
+analyses you can mix and match as needed: detect and track people,
+bicycles, and vehicles; estimate direction of travel and speed; read
+license plates to compute dwell time; and compute per-image occupancy
+counts, exporting whichever results you've generated to CSV.
+
+<a href="Poster.jpg"><img src="Poster.jpg" alt="Acadia AI project poster" width="100%"></a>
+
+Read the full writeup in [Report.pdf](<Report.pdf>) for
+methodology, evaluation, and results.
+
+## Download
+
+Grab the build for your platform from the
+[latest release](https://github.com/ElliotScher/Acadia-AI-E26/releases/latest).
+
+### Windows
+
+1. Download `ImageAnalyzerSetup.exe` and run it.
+2. Follow the installer; it adds a Start Menu shortcut and an uninstaller.
+
+### macOS (Apple Silicon)
+
+1. Download `acadia-ai-e26-macos-arm64.zip` and unzip it.
+2. Move `main.app` wherever you'd like (e.g. `/Applications`) and open it.
+
+### Linux
+
+1. Download `acadia-ai-e26-linux-x86_64.zip` and unzip it.
+2. Run the extracted binary (`chmod +x main` first if needed):
+   ```bash
+   ./main
+   ```
+
+## Build From Source
+
+Image Analyzer's GUI (`src/ui`) is built on top of a set of standalone
+command-line tools (`src/detection`, `src/processing`, `src/utility`) that
+can also batch-process video footage end-to-end outside of the GUI (YOLO
+detection → entity tracking → speed/direction/dwell-time computation →
+summary report).
+
+### Requirements
+
+- Python >= 3.10 (CI targets 3.13)
+- [`uv`](https://docs.astral.sh/uv/) for dependency management
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) on `PATH`
+  (used as a fallback to OCR the timestamp burned into camera footage,
+  when a frame's filename/mtime doesn't already give a reliable one)
+- [Git LFS](https://git-lfs.com/): Model weights (`*.pt`) and sample media
+  are tracked via LFS (see `.gitattributes`); run `git lfs pull` after
+  cloning if large files show up as pointer text
+
+### Setup
+
+```bash
+git clone https://github.com/ElliotScher/Acadia-AI-E26.git
+cd Acadia-AI-E26
+uv sync
+```
+
+`uv sync` installs all dependencies declared in `pyproject.toml`, including
+PyTorch, Ultralytics YOLO, OpenCV, PySide6, and SQLAlchemy.
+
+Model weights live under `models/`:
+
+| Path | Purpose |
+| --- | --- |
+| `models/generic/yolo26s.pt`, `yolov8s.pt` | General-purpose YOLO object detection (people, bikes, vehicles) |
+| `models/generic/yolo26s-pose.pt` | Pose keypoints, used for pedestrian direction |
+| `models/license_plate/license-plate.pt` | License plate localization |
+| `models/vehicle_direction/last.pt` | Vehicle-pose model (fine-tuned on CarFusion) used for vehicle direction; see `src/utility/fetch_vehicle_pose_weights.py` if it needs to be re-downloaded |
+
+### Running from source
+
+```bash
+uv run python src/ui/main.py
+```
+
+### Command-line pipeline
+
+Each stage below is also runnable independently, and each script's own
+`--help` documents its full option set:
+
+1. `src/detection/video_yolo.py` / `image_yolo.py`: Run YOLO over raw video
+   frames or images, producing a JSON detection report
+2. `src/processing/video_entityprofiler.py`: Track unique entities across
+   a video's frames from that report, export the best frame per entity, and
+   compute relative/absolute speed and direction
+3. `src/processing/report_recalibrator.py`: Recompute absolute speed on an
+   existing entity-profiler report against a different reference entity,
+   without reprocessing video
+4. `src/utility/report_summarizer.py`: Turn an entity-profiler (or
+   recalibrator) report into summary statistics: entity counts by type and
+   direction, per-video breakdowns, speed statistics
+5. `src/processing/video_plateextractor.py` → `plate_dwellprofiler.py`:
+   Detect and OCR license plates across video frames, then match repeated
+   plate readings to compute vehicle dwell time
+6. `src/processing/image_occupancyprofiler.py`: Re-identify and track
+   entities chronologically across a folder of images to compute occupancy
+   counts
+
+Utility scripts under `src/utility/` also include benchmarks
+(`vehicle_speed_benchmark.py`, `vehicle_direction_benchmark.py`,
+`pedestrian_direction_benchmark.py`, `plate_ocr_benchmark.py`,
+`speed_distribution_comparator.py`) that validate these algorithms against
+labeled/ground-truth datasets, and `scraper.py` for bulk-downloading photos
+from a Spypoint camera account.
+
+### Testing
+
+```bash
+uv run pytest
+```
+
+Tests live under `tests/`, mirroring the `src/` package layout, and run
+against sample media in `tests/data/`.
+
+### Building an executable
+
+Desktop builds are produced with PyInstaller (`main.spec`), driven by
+`.github/workflows/build.yml` for Linux, Windows, and macOS:
+
+```bash
+uv run pyinstaller main.spec
+```
+
+On Windows, the resulting binary is wrapped into an installer with
+[Inno Setup](https://jrsoftware.org/isinfo.php) via `installer/main.iss`.
+## License
+
+Licensed under the [GNU AGPLv3](LICENSE).
 
 <details>
-<summary>Bibliography</summary>
+<summary><h2 style="display: inline;">Bibliography</h2></summary>
 
 <pre>
 <i>Acadia National Park final transportation plan / Environmental impact statement</i>. (2019,
