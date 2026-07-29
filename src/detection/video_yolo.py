@@ -76,6 +76,9 @@ def _frame_worker(
     frame_queue: queue.Queue,
     results_by_video: dict[Path, list[tuple[int, Rectangle, int, float, str]]],
     results_lock: threading.Lock,
+    variable_downsample_skips: list[int],
+    variable_downsample_skips_lock: threading.Lock,
+    variable_downsample_factor: int,
     progress_bar: Optional[tqdm | ProgressTracker],
     inclusion_region: Optional[Rectangle],
     conf_threshold: float,
@@ -96,6 +99,9 @@ def _frame_worker(
         frame_queue (queue.Queue): Frame task queue.
         results_by_video (Dict[Path, List[Tuple[int, Rectangle, int, float]]]): Shared results accumulator.
         results_lock (threading.Lock): Thread lock for safe writes.
+        variable_downsample_skips (list[int]): Shared skippable frame indices
+        variable_downsample_skips_lock (threading.Lock): Thread lock for safe writes on downsample skip list.
+        variable_downsample_factor (int): Number of subsequent frames to mark as skippable when a frame contains nothing.
         progress_bar (Optional[tqdm | ProgressTracker]): Shared progress bar instance.
         inclusion_region (Optional[Rectangle]): Optional spatial filter.
         conf_threshold (float): Detection confidence threshold.
@@ -150,7 +156,7 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            if frame_idx % downsample_factor == 0:
+            if frame_idx % downsample_factor == 0 and frame_idx not in variable_downsample_skips:
                 boxes_found: list[tuple[int, Rectangle, int, float, str]] = []
 
                 if thread_model is not None:
@@ -225,6 +231,13 @@ def _frame_worker(
                         )
                         os.makedirs(Path(framePath).parent, exist_ok=True)
                         cv2.imwrite(framePath, frame)
+                else:
+                    with variable_downsample_skips_lock:
+                        for i in range(variable_downsample_factor):
+                            variable_downsample_skips.append(frame_idx + (downsample_factor * (i + 1)))
+            elif frame_idx in variable_downsample_skips:
+                with variable_downsample_skips_lock:
+                    variable_downsample_skips.remove(frame_idx)
 
         except Exception as e:
             logger.error(
@@ -248,6 +261,7 @@ def process_videos(
     run_base_model: bool = True,
     vehicle_merge: bool = True,
     downsample_factor: int = 1,
+    variable_downsample_factor: int = 0,
     write_frames: bool = False,
 ) -> List[DetectionResult]:
     """
@@ -268,6 +282,7 @@ def process_videos(
         run_base_model (bool): Whether to run the general-purpose COCO model at all. Defaults to True.
         vehicle_merge (bool): Whether to merge vehicles such as trucks, busses, and cars into the same ID
         downsample_factor (int): Process every Nth frame. Defaults to 1.
+        variable_downsample_factor (int): Number of subsequent frames to mark as skippable when a frame contains nothing. Defaults to 0.
         write_frames (bool): Whether to write processed frames to the disk. Defaults to False.
 
     Returns:
@@ -290,6 +305,9 @@ def process_videos(
     results_lock = threading.Lock()
     error_flag = threading.Event()
 
+    variable_downsample_skips: list[int] = []
+    variable_downsample_skips_lock = threading.Lock()
+
     # Limit queue size to avoid high memory consumption from loading many frames in RAM
     frame_queue = queue.Queue(maxsize=threads * 4)
 
@@ -304,6 +322,9 @@ def process_videos(
                 frame_queue,
                 results_by_video,
                 results_lock,
+                variable_downsample_skips,
+                variable_downsample_skips_lock,
+                variable_downsample_factor,
                 progress_bar,
                 inclusion_region,
                 conf_threshold,
@@ -595,6 +616,12 @@ def main() -> None:
         help="Process every Nth frame to optimize speed (default: 2).",
     )
     parser.add_argument(
+        "--variable-downsample",
+        type=int,
+        default=0,
+        help="Skip the next N frames after an empty frame to optimize speed (default: 0).",
+    )
+    parser.add_argument(
         "--write-frames",
         action="store_true",
         help="Whether to write processed frames to the disk (default: False).",
@@ -733,6 +760,7 @@ def main() -> None:
         run_base_model=run_base_model,
         vehicle_merge=args.merge,
         downsample_factor=args.downsample,
+        variable_downsample_factor=args.variable_downsample,
         write_frames=args.write_frames,
     )
 
