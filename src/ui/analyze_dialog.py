@@ -22,6 +22,7 @@ from detection.image_yolo import (
     DetectionResult,
     process_images,
 )
+from utility.geometryutils import Rectangle
 
 
 class AnalyzeDialog(QtWidgets.QDialog):
@@ -89,6 +90,18 @@ class AnalyzeDialog(QtWidgets.QDialog):
         threadCountLayout.addWidget(self.threadCount)
         layout.addLayout(threadCountLayout)
 
+        exclusionMarginLayout = QtWidgets.QHBoxLayout()
+        exclusionMarginLayout.addWidget(QtWidgets.QLabel("Exclusion Margin"))
+        self.exclusionMargin = QtWidgets.QSpinBox(
+            minimum=0,
+            maximum=50,
+            singleStep=5,
+            suffix="%",
+            value=10,
+        )
+        exclusionMarginLayout.addWidget(self.exclusionMargin)
+        layout.addLayout(exclusionMarginLayout)
+
         self.mergeCheckbox = QtWidgets.QCheckBox("Merge Similar Entity Types")
         layout.addWidget(self.mergeCheckbox)
 
@@ -134,6 +147,27 @@ class AnalyzeDialog(QtWidgets.QDialog):
         self.threadsRunning = 0
         self.results = list()
 
+        width = 0
+        height = 0
+        if video:
+            cap = open_video_capture(self.files[0][1])
+            if cap.isOpened():
+                width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                cap.release()
+        else:
+            sampleImage = cv2.imread(self.files[0][1])
+            if sampleImage is not None:
+                width = sampleImage.shape[1]
+                height = sampleImage.shape[0]
+        inclusionRegion = Rectangle(
+            int(width * (self.exclusionMargin.value() / 100.0)),
+            int(height * (self.exclusionMargin.value() / 100.0)),
+            int(width - (2 * width * (self.exclusionMargin.value() / 100.0))),
+            int(height - (2 * height * (self.exclusionMargin.value() / 100.0))),
+        )
+        print(inclusionRegion)
+
         for i in range(1 if video else threadCount):
             files = self.files[(i * filesPerThread) : ((i + 1) * filesPerThread)]
             if video:
@@ -148,6 +182,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                         self.variableDownsampleFactor.value(),
                         threadCount,
                         self.mergeCheckbox.isChecked(),
+                        inclusionRegion,
                     ),
                 )
                 thread.result.connect(self.finishVideoAnalysis)
@@ -160,6 +195,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                         self.minConfidence.value(),
                         targetClasses,
                         self.mergeCheckbox.isChecked(),
+                        inclusionRegion,
                     ),
                 )
                 thread.result.connect(self.finishAnalysis)
@@ -174,13 +210,14 @@ class AnalyzeDialog(QtWidgets.QDialog):
         minConfidence: float,
         targetClasses: list[int],
         mergeVehicles: bool,
+        inclusionRegion: Rectangle,
         _,
     ) -> list[DetectionResult]:
         results = process_images(
             [Path(x[1]) for x in images],
             "yolo26s.pt",
             upl.ProgressTracker(len(images)),
-            None,
+            inclusionRegion,
             minConfidence,
             targetClasses,
             vehicle_merge=mergeVehicles,
@@ -196,6 +233,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         variableDownsampleFactor: int,
         threadCount: int,
         mergeVehicles: bool,
+        inclusionRegion: Rectangle,
         thread: upl.Async,
     ) -> list[VideoDetectionResult]:
         total_frames = 0
@@ -214,7 +252,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             [Path(x[1]) for x in videos],
             "yolo26s.pt",
             upl.ProgressTracker(total_frames, thread),
-            None,
+            inclusionRegion,
             minConfidence,
             targetClasses,
             threadCount,
