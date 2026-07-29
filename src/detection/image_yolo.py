@@ -13,7 +13,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-from detection.classes import CLASS_ID_MAPPING
+from detection.classes import CLASS_ID_MAPPING, merge_vehicle_class_id
 from utility.parallel import ProgressTracker
 
 import cv2
@@ -52,6 +52,7 @@ def process_images(
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
     target_classes: Optional[List[int]] = None,
+    vehicle_merge: bool = True,
 ) -> List[DetectionResult]:
     """
     Processes a list of image paths using YOLO and extracts detection boxes and images.
@@ -64,6 +65,7 @@ def process_images(
         inclusion_region (Optional[Rectangle]): Optional spatial filter region.
         conf_threshold (float): Minimum confidence threshold for detections.
         target_classes (Optional[List[int]]): List of COCO class IDs to filter.
+        vehicle_merge (bool): Whether to merge vehicles such as trucks, busses, and cars into the same ID
 
     Returns:
         List[DetectionResult]: List of detection results per image.
@@ -105,6 +107,9 @@ def process_images(
             for r in results:
                 for box in r.boxes:  # type: ignore
                     cls = int(box.cls[0])
+
+                    if vehicle_merge:
+                        cls = merge_vehicle_class_id(cls)
 
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     w = x2 - x1
@@ -186,6 +191,7 @@ def thread_worker(
     inclusion_region: Optional[Rectangle] = None,
     conf_threshold: float = 0.25,
     target_classes: Optional[List[int]] = None,
+    vehicle_merge: bool = True,
 ) -> None:
     """
     Thread worker for parallel YOLO inference.
@@ -199,6 +205,7 @@ def thread_worker(
         inclusion_region (Optional[Rectangle]): Optional spatial filter.
         conf_threshold (float): Detection confidence threshold.
         target_classes (Optional[List[int]]): COCO class filter list.
+        vehicle_merge (bool): Whether to merge vehicles such as trucks, busses, and cars into the same ID
     """
     thread_results = process_images(
         img_paths=img_paths,
@@ -207,6 +214,7 @@ def thread_worker(
         inclusion_region=inclusion_region,
         conf_threshold=conf_threshold,
         target_classes=target_classes,
+        vehicle_merge=vehicle_merge,
     )
     with lock:
         results_list.extend(thread_results)
@@ -249,6 +257,12 @@ def main() -> None:
         type=str,
         default=None,
         help="Inclusion region as 'x,y,w,h' in pixels (default: None).",
+    )
+    parser.add_argument(
+        "--merge",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Whether to merge vehicles such as trucks, busses, and cars into the same ID",
     )
     parser.add_argument(
         "-r",
@@ -360,6 +374,7 @@ def main() -> None:
                 "inclusion_region": inclusion_region,
                 "conf_threshold": args.conf,
                 "target_classes": target_classes,
+                "vehicle_merge": args.merge,
             },
         )
         threads.append(thread)
