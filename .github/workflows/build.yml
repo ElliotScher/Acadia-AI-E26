@@ -1,10 +1,9 @@
 name: Build executable
 
 on:
-  push:
-#    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
+    types: [ opened, synchronize, reopened, closed ]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +11,7 @@ permissions:
 
 jobs:
   build-linux:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
@@ -91,6 +91,7 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: windows-latest
 
     steps:
@@ -146,6 +147,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: macos-latest
 
     steps:
@@ -199,7 +201,7 @@ jobs:
 
   release:
     needs: [ package-linux, package-windows, package-macos ]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write

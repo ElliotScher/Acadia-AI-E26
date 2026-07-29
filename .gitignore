@@ -46,6 +46,9 @@ venv
 # PyInstaller splash screen asset
 !assets/splash.png
 
+# Project poster, referenced from the README
+!/Poster.jpg
+
 # Virtual Environments
 .env/
 .venv/
