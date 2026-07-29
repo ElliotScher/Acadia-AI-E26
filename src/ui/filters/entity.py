@@ -60,6 +60,8 @@ class EntityTypeFilter(Filter):
 
     @QtCore.Slot()
     def makeFilter(self, query: Select) -> Select:
+        if not self.typeFilter.currentIndex() in self.types:
+            return query
         return query.join(Entity.instances).where(
             Instance.type_id == self.types[self.typeFilter.currentIndex()]
         )
