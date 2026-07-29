@@ -101,6 +101,14 @@ class AnalyzeDialog(QtWidgets.QDialog):
             downsampleLayout.addWidget(self.downsampleFactor)
             layout.addLayout(downsampleLayout)
 
+            variableDownsampleLayout = QtWidgets.QHBoxLayout()
+            variableDownsampleLayout.addWidget(QtWidgets.QLabel("Variable downsample factor"))
+            self.variableDownsampleFactor = QtWidgets.QSpinBox()
+            self.variableDownsampleFactor.setRange(0, 10)
+            self.variableDownsampleFactor.setValue(1)
+            variableDownsampleLayout.addWidget(self.variableDownsampleFactor)
+            layout.addLayout(variableDownsampleLayout)
+
         self.buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel
@@ -137,6 +145,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                         self.minConfidence.value(),
                         targetClasses,
                         self.downsampleFactor.value(),
+                        self.variableDownsampleFactor.value(),
                         threadCount,
                         self.mergeCheckbox.isChecked(),
                     ),
@@ -184,6 +193,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
         minConfidence: float,
         targetClasses: list[int],
         downsampleFactor: int,
+        variableDownsampleFactor: int,
         threadCount: int,
         mergeVehicles: bool,
         thread: upl.Async,
@@ -209,6 +219,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
             targetClasses,
             threadCount,
             downsample_factor=downsampleFactor,
+            variable_downsample_factor=variableDownsampleFactor,
             write_frames=True,
             vehicle_merge=mergeVehicles,
         )
