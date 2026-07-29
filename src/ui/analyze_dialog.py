@@ -169,13 +169,12 @@ class AnalyzeDialog(QtWidgets.QDialog):
         print(inclusionRegion)
 
         for i in range(1 if video else threadCount):
-            files = self.files[(i * filesPerThread) : ((i + 1) * filesPerThread)]
             if video:
                 thread = upl.Async(
                     "Video Analysis",
                     functools.partial(
                         self.analyzeVideoThread,
-                        files,
+                        self.files,
                         self.minConfidence.value(),
                         targetClasses,
                         self.downsampleFactor.value(),
@@ -187,6 +186,7 @@ class AnalyzeDialog(QtWidgets.QDialog):
                 )
                 thread.result.connect(self.finishVideoAnalysis)
             else:
+                files = self.files[(i * filesPerThread) : ((i + 1) * filesPerThread)]
                 thread = upl.Async(
                     "Analysis " + str(i + 1),
                     functools.partial(
