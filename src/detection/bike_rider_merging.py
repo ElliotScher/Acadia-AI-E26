@@ -19,7 +19,7 @@ def merge_bikes_riders(session: Session, image: Image, threshold: float):
             ptx = person.x + person.width / 2
             pty = person.y + person.height / 2
             dist = math.sqrt((btx - ptx) ** 2 + (bty - pty) ** 2)
-            if person not in merged and dist < person.width / 2:
+            if person not in merged and dist < person.width / 2 * threshold:
                 merge.append(person)
                 merged.add(person)
 
