@@ -64,7 +64,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: raw-binary-linux-x86_64
-          path: dist/main
+          path: dist/ParkVision
           if-no-files-found: error
 
   package-linux:
@@ -81,13 +81,13 @@ jobs:
       - name: Package build artifact
         run: |
           cd dist
-          zip -r ../acadia-ai-e26-linux-x86_64.zip main
+          zip -r ../park-vision-linux-x86_64.zip ParkVision
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: acadia-ai-e26-linux-x86_64
-          path: acadia-ai-e26-linux-x86_64.zip
+          name: park-vision-linux-x86_64
+          path: park-vision-linux-x86_64.zip
           if-no-files-found: error
 
   build-windows:
@@ -117,7 +117,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: raw-binary-windows-x86_64
-          path: dist/main.exe
+          path: dist/ParkVision.exe
           if-no-files-found: error
 
   package-windows:
@@ -139,11 +139,14 @@ jobs:
       - name: Build installer
         run: iscc installer\main.iss
 
+      - name: Package build artifact
+        run: Compress-Archive -Path installer-output/ParkVisionSetup.exe -DestinationPath park-vision-windows-x86_64.zip
+
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: acadia-ai-e26-windows-x86_64
-          path: installer-output/ImageAnalyzerSetup.exe
+          name: park-vision-windows-x86_64
+          path: park-vision-windows-x86_64.zip
           if-no-files-found: error
 
   build-macos:
@@ -173,7 +176,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: raw-binary-macos-arm64
-          path: dist/main.app
+          path: dist/ParkVision.app
           if-no-files-found: error
 
   package-macos:
@@ -185,19 +188,19 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: raw-binary-macos-arm64
-          path: dist/main.app
+          path: dist/ParkVision.app
 
       - name: Fetch macOS packaging script
         run: curl -fsSL https://gist.githubusercontent.com/Draknek/3ce889860cea4f59838386a79cc11a85/raw/37daf45a6be2aff6c416649c17dcc928799c853a/zip-app.py -o zip-app.py
 
       - name: Package build artifact
-        run: python3 zip-app.py dist/main.app acadia-ai-e26-macos-arm64.zip
+        run: python3 zip-app.py dist/ParkVision.app park-vision-macos-arm64.zip
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: acadia-ai-e26-macos-arm64
-          path: acadia-ai-e26-macos-arm64.zip
+          name: park-vision-macos-arm64
+          path: park-vision-macos-arm64.zip
           if-no-files-found: error
 
   release:
@@ -211,11 +214,20 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: acadia-ai-e26-*
+          pattern: park-vision-*
           path: dist
           merge-multiple: false
+
+      - name: Generate release tag
+        id: tag
+        run: echo "tag=$(date -u +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          files: dist/*/*
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: |
+            dist/park-vision-windows-x86_64/park-vision-windows-x86_64.zip
+            dist/park-vision-macos-arm64/park-vision-macos-arm64.zip
+            dist/park-vision-linux-x86_64/park-vision-linux-x86_64.zip

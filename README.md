@@ -22,25 +22,25 @@ Grab the build for your platform from the
 
 ### Windows
 
-1. Download `ImageAnalyzerSetup.exe` and run it.
+1. Download `ParkVisionSetup.exe` and run it.
 2. Follow the installer; it adds a Start Menu shortcut and an uninstaller.
 
 ### macOS (Apple Silicon)
 
-1. Download `acadia-ai-e26-macos-arm64.zip` and unzip it.
-2. Move the executable called `main` wherever you'd like (e.g. `/Applications`) and open it.
+1. Download `park-vision-macos-arm64.zip` and unzip it.
+2. Move `ParkVision.app` wherever you'd like (e.g. `/Applications`) and open it.
 
 ### Linux
 
-1. Download `acadia-ai-e26-linux-x86_64.zip` and unzip it.
-2. Run the extracted binary (`chmod +x main` first if needed):
+1. Download `park-vision-linux-x86_64.zip` and unzip it.
+2. Run the extracted binary (`chmod +x ParkVision` first if needed):
    ```bash
-   ./main
+   ./ParkVision
    ```
 
 ## Build From Source
 
-Image Analyzer's GUI (`src/ui`) is built on top of a set of standalone
+Park Vision's GUI (`src/ui`) is built on top of a set of standalone
 command-line tools (`src/detection`, `src/processing`, `src/utility`) that
 can also batch-process video footage end-to-end outside of the GUI (YOLO
 detection → entity tracking → speed/direction/dwell-time computation →

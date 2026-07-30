@@ -21,8 +21,8 @@ splash = Splash(
     'assets/splash.png',
     binaries=a.binaries,
     datas=a.datas,
-    text_pos=(20, 295),
-    text_size=11,
+    text_pos=(20, 719),
+    text_size=14,
     text_color='#ebeef2',
     text_default='Starting...',
     minify_script=True,
@@ -37,7 +37,7 @@ exe = EXE(
     splash if splash is not None else [],
     splash.binaries if splash is not None else [],
     [],
-    name='main',
+    name='ParkVision',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -56,7 +56,7 @@ exe = EXE(
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
-        name='main.app',
+        name='ParkVision.app',
         icon='assets/icon.png',
         bundle_identifier=None,
     )
