@@ -1,16 +1,16 @@
-; Inno Setup script for Image Analyzer.
-; Packages the onefile PyInstaller output (dist\main.exe, built via
+; Inno Setup script for Park Vision.
+; Packages the onefile PyInstaller output (dist\ParkVision.exe, built via
 ; main.spec) into a Setup.exe with a Start Menu entry, optional desktop
 ; shortcut, and a real uninstaller - the Windows equivalent of main.spec's
 ; macOS BUNDLE().
 ;
 ; Built in CI with: iscc installer\main.iss (run from the repo root, after
-; `pyinstaller main.spec` has produced dist\main.exe).
+; `pyinstaller main.spec` has produced dist\ParkVision.exe).
 
-#define MyAppName "Image Analyzer"
+#define MyAppName "Park Vision"
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "Acadia AI"
-#define MyAppExeName "main.exe"
+#define MyAppExeName "ParkVision.exe"
 
 [Setup]
 ; Fixed, random GUID identifying this app across versions - do not change,
@@ -24,7 +24,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installer-output
-OutputBaseFilename=ImageAnalyzerSetup
+OutputBaseFilename=ParkVisionSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -38,7 +38,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\main.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\ParkVision.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

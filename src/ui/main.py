@@ -33,7 +33,7 @@ class Root(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Image Analyzer")
+        self.setWindowTitle("Park Vision")
 
         self.widget = QtWidgets.QWidget()
         self.setCentralWidget(self.widget)
