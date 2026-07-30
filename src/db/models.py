@@ -147,6 +147,7 @@ class Image(Base):
             header = ["date", "time"]
             presentTypes = Instance.get_present_types(session)
             entityCounts: dict[int, int] = dict()
+            entitiesSeen: list[int] = []
             clusterCount = 0
             for presentType in presentTypes:
                 if separateDirections:
@@ -182,6 +183,7 @@ class Image(Base):
                             entityCounts[entity] = 0
                         row.append(clusterCount)
                         clusterCount = 0
+                        entitiesSeen.clear()
                         data.append(row)
 
                         if len(data) > 100:
@@ -196,10 +198,14 @@ class Image(Base):
 
                 clusters = []
                 for instance in image.get_instances(session):
+                    if instance.entity_id in entitiesSeen:
+                        continue
+                    entitiesSeen.append(instance.entity_id)
+
                     if separateDirections:
-                        if instance.direction_lr == 1:
+                        if instance.direction_lr == -1:
                             entityCounts[instance.type_id] += 1
-                        elif instance.direction_lr == -1:
+                        elif instance.direction_lr == 1:
                             entityCounts[instance.type_id + len(CLASS_ID_MAPPING)] += 1
 
                         if instance.direction_fb == 1:
