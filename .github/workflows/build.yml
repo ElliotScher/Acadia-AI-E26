@@ -187,10 +187,11 @@ jobs:
           name: raw-binary-macos-arm64
           path: dist/main.app
 
+      - name: Fetch macOS packaging script
+        run: curl -fsSL https://gist.githubusercontent.com/Draknek/3ce889860cea4f59838386a79cc11a85/raw/37daf45a6be2aff6c416649c17dcc928799c853a/zip-app.py -o zip-app.py
+
       - name: Package build artifact
-        run: |
-          cd dist
-          zip -r -y ../acadia-ai-e26-macos-arm64.zip main.app
+        run: python3 zip-app.py dist/main.app acadia-ai-e26-macos-arm64.zip
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

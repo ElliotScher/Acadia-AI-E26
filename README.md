@@ -1,6 +1,6 @@
-# Acadia AI (E26)
+# Park Vision (E26)
 
-**Acadia AI** is a desktop app built by a WPI Interactive Qualifying
+**Park Vision** is a desktop app built by a WPI Interactive Qualifying
 Project to help the National Park Service understand visitor use in Acadia
 National Park, using still images and video already captured by trail
 cameras deployed in the park. Rather than manually reviewing thousands of
@@ -28,7 +28,7 @@ Grab the build for your platform from the
 ### macOS (Apple Silicon)
 
 1. Download `acadia-ai-e26-macos-arm64.zip` and unzip it.
-2. Move `main.app` wherever you'd like (e.g. `/Applications`) and open it.
+2. Move the executable called `main` wherever you'd like (e.g. `/Applications`) and open it.
 
 ### Linux
 
