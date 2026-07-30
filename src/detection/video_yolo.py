@@ -156,7 +156,10 @@ def _frame_worker(
         video_path, frame_idx, frame = task
 
         try:
-            if frame_idx % downsample_factor == 0 and frame_idx not in variable_downsample_skips:
+            if (
+                frame_idx % downsample_factor == 0
+                and frame_idx not in variable_downsample_skips
+            ):
                 boxes_found: list[tuple[int, Rectangle, int, float, str]] = []
 
                 if thread_model is not None:
@@ -234,7 +237,9 @@ def _frame_worker(
                 else:
                     with variable_downsample_skips_lock:
                         for i in range(variable_downsample_factor):
-                            variable_downsample_skips.append(frame_idx + (downsample_factor * (i + 1)))
+                            variable_downsample_skips.append(
+                                frame_idx + (downsample_factor * (i + 1))
+                            )
             elif frame_idx in variable_downsample_skips:
                 with variable_downsample_skips_lock:
                     variable_downsample_skips.remove(frame_idx)

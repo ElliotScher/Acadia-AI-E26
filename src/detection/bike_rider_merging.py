@@ -6,7 +6,7 @@ from db.models import Image, Instance
 def merge_bikes_riders(session: Session, image: Image, threshold: float):
     instances = image.get_instances(session)
     bikes: list[Instance] = [x for x in instances if x.type_id == 1 or x.type_id == 3]
-    people: list[Instance] = [x for x in instances if x .type_id == 0]
+    people: list[Instance] = [x for x in instances if x.type_id == 0]
     merges: list[list[Instance]] = []
     merged: set[Instance] = set()
 
