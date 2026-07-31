@@ -6,7 +6,7 @@ a = Analysis(
     ['src/ui/main.py'],
     pathex=[],
     binaries=[],
-    datas=[('models', 'models')],
+    datas=[('models', 'models'), ('assets', 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -21,8 +21,8 @@ splash = Splash(
     'assets/splash.png',
     binaries=a.binaries,
     datas=a.datas,
-    text_pos=(27, 956),
-    text_size=19,
+    text_pos=(14, 478),
+    text_size=10,
     text_color='#ebeef2',
     text_default='Starting...',
     minify_script=True,
@@ -30,7 +30,7 @@ splash = Splash(
     # max_img_size=None is documented to disable the resize cap, but
     # PyInstaller 6.21.0 does `img_size > self.max_img_size` unconditionally
     # and crashes on None, so pass a bound at least as large as splash.png.
-    max_img_size=(1330, 1001),
+    max_img_size=(665, 500),
 ) if sys.platform != 'darwin' else None
 
 exe = EXE(
