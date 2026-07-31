@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from pathlib import Path
 from typing import Callable
 import os
 import platform
@@ -27,6 +28,18 @@ from ui.pose_direction_dialog import PoseDirectionDialog
 from ui.bike_rider_merging_dialog import BikeRiderMergeDialog
 
 
+def _asset_path(name: str) -> str:
+    """
+    Resolves a path under this project's bundled `assets/` directory
+    """
+    base = (
+        Path(sys._MEIPASS)  # type: ignore[attr-defined]
+        if hasattr(sys, "_MEIPASS")
+        else Path(__file__).resolve().parents[2]
+    )
+    return str(base / "assets" / name)
+
+
 class Root(QtWidgets.QMainWindow):
     db: Engine
     session: Session
@@ -34,7 +47,7 @@ class Root(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Park Vision")
-        self.setWindowIcon(QtGui.QIcon("./assets/icon.png"))
+        self.setWindowIcon(QtGui.QIcon(_asset_path("icon.png")))
 
         self.widget = QtWidgets.QWidget()
         self.setCentralWidget(self.widget)
