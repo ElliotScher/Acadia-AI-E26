@@ -21,12 +21,13 @@ splash = Splash(
     'assets/splash.png',
     binaries=a.binaries,
     datas=a.datas,
-    text_pos=(20, 719),
-    text_size=14,
+    text_pos=(27, 956),
+    text_size=19,
     text_color='#ebeef2',
     text_default='Starting...',
     minify_script=True,
     always_on_top=True,
+    max_img_size=None,
 ) if sys.platform != 'darwin' else None
 
 exe = EXE(
