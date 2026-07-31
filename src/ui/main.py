@@ -34,6 +34,7 @@ class Root(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Park Vision")
+        self.setWindowIcon(QtGui.QIcon("./assets/logo.png"))
 
         self.widget = QtWidgets.QWidget()
         self.setCentralWidget(self.widget)
