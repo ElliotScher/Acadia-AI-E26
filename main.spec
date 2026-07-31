@@ -27,7 +27,10 @@ splash = Splash(
     text_default='Starting...',
     minify_script=True,
     always_on_top=True,
-    max_img_size=None,
+    # max_img_size=None is documented to disable the resize cap, but
+    # PyInstaller 6.21.0 does `img_size > self.max_img_size` unconditionally
+    # and crashes on None, so pass a bound at least as large as splash.png.
+    max_img_size=(1330, 1001),
 ) if sys.platform != 'darwin' else None
 
 exe = EXE(
